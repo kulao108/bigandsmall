@@ -149,6 +149,10 @@
 </head>
 <body>
 
+    <!-- 預錄普通話 MP3：此網頁不使用任何 iPad 系統語音 -->
+    <audio id="mandarin-voice-audio" src="./mandarin.mp3" preload="metadata"></audio>
+    <div id="audio-notice" role="status" aria-live="polite" style="display:none;position:fixed;z-index:100;top:12px;left:50%;transform:translateX(-50%);width:min(90vw,540px);background:#7f1d1d;color:white;padding:14px 20px;border-radius:16px;font-weight:bold;text-align:center;box-shadow:0 8px 25px rgba(0,0,0,.25);pointer-events:none;"></div>
+
     <!-- 3D WebGL Canvas Container -->
     <div id="canvas-container"></div>
 
@@ -178,6 +182,9 @@
             <p class="text-base md:text-lg text-amber-950 font-bold mb-6">
                 從前，有一隻個子很大的老鼠和一隻個子很小的老鼠。他們兩個是好朋友。
             </p>
+
+            <button type="button" onclick="playWelcomeIntro()" class="btn-3d mb-3 w-full bg-sky-500 hover:bg-sky-600 text-white font-black py-3 px-4 rounded-2xl text-lg">🔊 點我聽故事開場（普通話錄音）</button>
+            <p id="audio-setup-status" aria-live="polite" class="text-sm font-bold text-amber-800 mb-4">正在載入普通話錄音…</p>
 
             <!-- Character Cards matching reference illustration -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -596,99 +603,126 @@
             }
         }
 
-        // Mandarin-only voice selection for iPad Safari and other browsers.
-        // IMPORTANT: iPadOS can still override even an explicitly selected voice.
-        // For guaranteed identical Mandarin across devices, use pre-recorded MP3 files.
-        function isMandarinVoice(v) {
-            const lang = String(v.lang || '').replace(/_/g, '-').toLowerCase();
-            const name = String(v.name || '').toLowerCase();
-            const uri = String(v.voiceURI || '').toLowerCase();
-            if (/cantonese|yue|粵|粤|sin-ji|sinji/.test(name + ' ' + uri)) return false;
-            if (/^(?:zh-(?:hk|mo)(?:-|$)|yue(?:-|$))/.test(lang)) return false;
-            // zh-CN, zh-SG, zh-TW and cmn-* are Mandarin locales.
-            return /^(?:zh-(?:cn|sg|tw)(?:-|$)|cmn(?:-|$))/.test(lang);
+        // 普通話錄音模式：沒有文字轉語音 fallback，任何 iPad 都只播放錄製的 MP3。
+        // 必須同時上傳 mandarin.mp3 + voice-timings.json 到與 index.html 相同的資料夾。
+        let voiceClips = {};
+        let voiceReady = false;
+        let stopAtSeconds = null;
+        let clipFrame = null;
+        let playbackToken = 0;
+        let noticeTimer = null;
+        const voiceAudio = document.getElementById('mandarin-voice-audio');
+
+        function voiceStatus(message, isError = false) {
+            const status = document.getElementById('audio-setup-status');
+            if (status) {
+                status.textContent = message;
+                status.className = isError
+                    ? 'text-sm font-bold text-rose-700 mt-3'
+                    : 'text-sm font-bold text-emerald-700 mt-3';
+            }
         }
 
-        function getBestMandarinVoice() {
-            if (!('speechSynthesis' in window)) return null;
-            const voices = window.speechSynthesis.getVoices() || [];
-            const choices = voices.filter(isMandarinVoice);
-            if (!choices.length) return null; // NEVER fall back to a Cantonese / unknown voice.
-            const priority = (v) => {
-                const lang = String(v.lang || '').replace(/_/g, '-').toLowerCase();
-                const name = String(v.name || '').toLowerCase();
-                let score = 0;
-                if (lang === 'zh-cn') score = 100;
-                else if (lang.startsWith('zh-cn-') || lang.startsWith('cmn-hans-cn')) score = 90;
-                else if (lang === 'zh-sg') score = 80;
-                else if (lang.startsWith('cmn')) score = 70;
-                else if (lang.startsWith('zh-tw')) score = 60;
-                if (/ting-?ting|yu-?shu|xiaoxiao|putonghua/.test(name)) score += 3;
-                return score;
-            };
-            choices.sort((a, b) => priority(b) - priority(a));
-            return choices[0];
+        function showVoiceNotice(message) {
+            let el = document.getElementById('audio-notice');
+            if (!el) return;
+            el.textContent = message;
+            el.style.display = 'block';
+            if (noticeTimer) clearTimeout(noticeTimer);
+            noticeTimer = setTimeout(() => { el.style.display = 'none'; }, 6000);
         }
 
-        // Show a clear message rather than silently switching to Cantonese.
-        function showMandarinVoiceWarning() {
-            if (document.getElementById('mandarin-voice-warning')) return;
-            const div = document.createElement('div');
-            div.id = 'mandarin-voice-warning';
-            div.setAttribute('role', 'status');
-            div.style.cssText = 'position:fixed;z-index:1000;left:50%;bottom:18px;transform:translateX(-50%);max-width:640px;width:calc(100% - 32px);padding:12px 16px;background:#fff8db;color:#753800;border:2px solid #f59e0b;border-radius:16px;box-shadow:0 6px 22px #0003;font-size:15px;font-weight:700;line-height:1.5;text-align:center;';
-            div.textContent = '⚠️ 未找到普通話語音，因此暫停朗讀，避免播出粵語。請到 iPad「設定 → 輔助使用 → 朗讀內容／閱讀與朗讀 → 聲音 → 中文」選擇普通話語音，然後重新載入網頁。';
-            document.body.appendChild(div);
+        async function loadVoiceClips() {
+            voiceStatus('正在檢查普通話錄音設定…');
+            try {
+                const res = await fetch('./voice-timings.json', { cache: 'no-store' });
+                if (!res.ok) throw new Error('voice-timings.json 回應 ' + res.status);
+                const data = await res.json();
+                if (!data || !data.clips || typeof data.clips !== 'object') {
+                    throw new Error('時間設定格式不正確');
+                }
+                voiceClips = data.clips;
+                const count = Object.values(voiceClips).filter(v => Array.isArray(v) &&
+                    Number.isFinite(v[0]) && Number.isFinite(v[1]) && v[1] > v[0]).length;
+                voiceReady = count > 0;
+                if (!voiceReady) {
+                    voiceStatus('尚未設定錄音時間：請用時間標記工具產生 voice-timings.json。', true);
+                } else {
+                    voiceStatus(`✅ 已載入 ${count} 段普通話錄音；點選 🔊 即可播放。`);
+                }
+            } catch (err) {
+                console.warn('普通話時間檔未載入：',err);
+                voiceReady = false;
+                voiceStatus('⚠️ 尚未載入 voice-timings.json，請依部署說明上傳。', true);
+            }
         }
 
-        function hideMandarinVoiceWarning() {
-            const warning = document.getElementById('mandarin-voice-warning');
-            if (warning) warning.remove();
+        function stopMandarinAudio() {
+            playbackToken++;
+            if (clipFrame !== null) cancelAnimationFrame(clipFrame);
+            clipFrame = null;
+            stopAtSeconds = null;
+            voiceAudio.pause();
+        }
+
+        function checkClipEnd() {
+            if (stopAtSeconds === null || voiceAudio.paused) return;
+            if (voiceAudio.currentTime >= stopAtSeconds - 0.015) {
+                stopMandarinAudio();
+                return;
+            }
+            clipFrame = requestAnimationFrame(checkClipEnd);
         }
 
         function speakMandarin(text, speakerType = 'big') {
-            if (!('speechSynthesis' in window) || !text) {
-                showMandarinVoiceWarning();
-                return false;
+            // speakerType 為原有角色狀態；真正聲線已固定在同一份 MP3 裏。
+            stopMandarinAudio();
+            if (!voiceReady) {
+                showVoiceNotice('尚未設定普通話錄音，請老師上傳 mandarin.mp3 和 voice-timings.json。');
+                return;
+            }
+            const clipToken = playbackToken;
+            const clip = voiceClips[text];
+            if (!Array.isArray(clip) || !Number.isFinite(clip[0]) ||
+                !Number.isFinite(clip[1]) || clip[1] <= clip[0]) {
+                console.warn('找不到這句普通話錄音：', text);
+                showVoiceNotice('這句錄音尚未標記，請老師重新匯出 voice-timings.json。');
+                return;
             }
             try {
-                const voice = getBestMandarinVoice();
-                if (!voice) {
-                    window.speechSynthesis.cancel();
-                    showMandarinVoiceWarning();
-                    console.warn('[普通話朗讀] 裝置沒有提供可用的普通話語音。',
-                        (window.speechSynthesis.getVoices() || []).map(v => ({name: v.name, lang: v.lang})));
-                    return false;
+                // currentTime 定位到這句在整段 MP3 的開始秒數，再於結束秒數暫停。
+                // Safari 在首次播放時需要學生觸摸「朗讀」或開始遊戲。
+                stopAtSeconds = clip[1];
+                voiceAudio.playbackRate = 1;
+                voiceAudio.currentTime = clip[0];
+                const p = voiceAudio.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(err => {
+                        // 快速切換場景會中止上一句播放，這不是故障。
+                        if (clipToken !== playbackToken || err.name === 'AbortError') return;
+                        console.warn('iPad 阻止播放或音訊載入失敗：', err);
+                        stopMandarinAudio();
+                        showVoiceNotice('音訊未能播放：請再按一次 🔊 朗讀，並檢查 iPad 音量及 MP3 是否已上傳。');
+                    });
                 }
-                hideMandarinVoiceWarning();
-                window.speechSynthesis.cancel();
-                const utter = new SpeechSynthesisUtterance(text);
-                utter.voice = voice;       // Must assign the actual Mandarin voice object.
-                utter.lang = voice.lang;   // Match the selected voice's Mandarin locale.
-                if (speakerType === 'big') {
-                    utter.pitch = 0.88;
-                    utter.rate = 0.92;
-                } else if (speakerType === 'small') {
-                    utter.pitch = 1.10;
-                    utter.rate = 0.94;
-                } else {
-                    utter.pitch = 1.0;
-                    utter.rate = 0.92;
-                }
-                utter.onerror = e => console.warn('[普通話朗讀] 無法播放：', e.error || e);
-                window.speechSynthesis.speak(utter);
-                return true;
-            } catch (err) {
-                console.warn('[普通話朗讀] 語音合成發生錯誤：', err);
-                return false;
+                if (clipFrame !== null) cancelAnimationFrame(clipFrame);
+                clipFrame = requestAnimationFrame(checkClipEnd);
+            } catch(err) {
+                stopMandarinAudio();
+                console.warn('MP3 定位失敗：',err);
+                showVoiceNotice('MP3 尚未準備好，請稍後再按 🔊 朗讀。');
             }
         }
 
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.onvoiceschanged = () => {
-                if (getBestMandarinVoice()) hideMandarinVoiceWarning();
-            };
-        }
+        // timeupdate 作為背景播放的額外停止保險。
+        voiceAudio.addEventListener('timeupdate', () => {
+            if (stopAtSeconds !== null && voiceAudio.currentTime >= stopAtSeconds - 0.015) {
+                stopMandarinAudio();
+            }
+        });
+        voiceAudio.addEventListener('error', () => {
+            voiceStatus('⚠️ 找不到 mandarin.mp3，請檢查檔名及 GitHub 路徑。', true);
+        });
 
         function replayCurrentSpeech() {
             if (!currentSpeechLine) return;
@@ -1999,7 +2033,7 @@
             }
             hasSpokenWelcomeIntro = true;
             initAudio();
-            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+            stopMandarinAudio();
             document.getElementById('welcome-modal').classList.add('hidden');
             currentRole = role;
             currentSceneIndex = 0;
@@ -2592,56 +2626,17 @@
             renderer.render(scene, camera);
         }
 
-        // Speak the opening story sentence in Mandarin (zh-CN) immediately upon opening the link / entering the role-selection page
-        function scheduleWelcomeIntroSpeech() {
+        // iPad Safari 不容許未經觸摸自動播放有聲音的 MP3，讓學生按開場朗讀。
+        function playWelcomeIntro() {
             const welcomeText = '從前，有一隻個子很大的老鼠和一隻個子很小的老鼠。他們兩個是好朋友。';
-
-            const trySpeakNow = () => {
-                const modal = document.getElementById('welcome-modal');
-                if (!modal || modal.classList.contains('hidden') || hasSpokenWelcomeIntro) return;
-                if ('speechSynthesis' in window) {
-                    const voices = window.speechSynthesis.getVoices();
-                    if (voices && getBestMandarinVoice()) {
-                        hasSpokenWelcomeIntro = speakMandarin(welcomeText, 'both');
-                    }
-                }
-            };
-
-            // Try immediately on page load
-            trySpeakNow();
-
-            // Also trigger as soon as browser voices finish loading
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.addEventListener('voiceschanged', trySpeakNow, { once: true });
-            }
-
-            // Fallback short retry in case voices took a moment to initialize
-            welcomeIntroTimer = setTimeout(() => {
-                const modal = document.getElementById('welcome-modal');
-                if (!modal || modal.classList.contains('hidden') || hasSpokenWelcomeIntro) return;
-                hasSpokenWelcomeIntro = speakMandarin(welcomeText, 'both');
-            }, 150);
-
-            // Fallback for browsers (like iPad Safari) that require a touch gesture to unlock SpeechSynthesis if autoplay was blocked
-            const unlockWelcomeSpeech = (e) => {
-                if (e.target && e.target.closest && e.target.closest('[onclick*="startGameWithRole"]')) {
-                    window.removeEventListener('pointerdown', unlockWelcomeSpeech);
-                    return;
-                }
-                const modal = document.getElementById('welcome-modal');
-                if (modal && !modal.classList.contains('hidden')) {
-                    if (welcomeIntroTimer) clearTimeout(welcomeIntroTimer);
-                    hasSpokenWelcomeIntro = speakMandarin(welcomeText, 'both');
-                }
-                window.removeEventListener('pointerdown', unlockWelcomeSpeech);
-            };
-            window.addEventListener('pointerdown', unlockWelcomeSpeech);
+            playChimeSound('greet');
+            speakMandarin(welcomeText, 'both');
         }
 
         window.onload = function () {
             initThreeJS();
             animate();
-            scheduleWelcomeIntroSpeech();
+            loadVoiceClips();
         };
     </script>
 </body>
