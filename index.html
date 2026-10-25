@@ -1,0 +1,2648 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="description" content="《大個子和小不點兒》小學二年級3D沉浸式第一人稱視角體驗遊戲，體驗不同身高看到的世界。">
+    <meta name="theme-color" content="#cbe8f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="大個子和小不點兒">
+    <!-- Inline SVG Favicon for GitHub Pages (Zero 404 errors) -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐭</text></svg>">
+    <title>《大個子和小不點兒》3D第一人稱視角體驗遊戲</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js r128 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Google Fonts: Rounded Kid-Friendly Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            font-family: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            width: 100dvw;
+            height: 100dvh;
+            overflow: hidden;
+            touch-action: none;
+            background-color: #cbe8f6;
+            position: fixed;
+            inset: 0;
+        }
+        #canvas-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+            touch-action: none;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+        /* Storybook UI Styling optimized for iPad */
+        .storybook-panel {
+            background: rgba(255, 252, 242, 0.95);
+            border: 3px solid #eab308;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15), inset 0 2px 0 rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+        }
+        .btn-3d {
+            transition: all 0.15s ease;
+            box-shadow: 0 5px 0 rgba(0, 0, 0, 0.2);
+            touch-action: manipulation;
+        }
+        .btn-3d:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+        }
+        .role-active-big {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            color: white;
+            border-color: #ffffff;
+        }
+        .role-active-small {
+            background: linear-gradient(135deg, #f59e0b, #eab308);
+            color: #451a03;
+            border-color: #ffffff;
+        }
+        /* Floating 3D HTML Side Labels - Never Blocking the 3D Object */
+        .label-3d {
+            position: absolute;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: opacity 0.25s ease, filter 0.25s ease;
+            z-index: 15;
+            touch-action: manipulation;
+        }
+        .label-3d.label-side-right {
+            transform: translate(0%, -50%);
+        }
+        .label-3d.label-side-left {
+            transform: translate(-100%, -50%);
+        }
+        .label-3d.label-active:hover .label-pill,
+        .label-3d.label-active:active .label-pill {
+            transform: scale(1.08);
+        }
+        .label-3d.label-disabled {
+            display: none !important;
+            pointer-events: none;
+        }
+        @keyframes floatPulse {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+        }
+        .animate-float {
+            animation: floatPulse 2.2s infinite ease-in-out;
+        }
+        @keyframes blinkHighlight {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1.08);
+                background-color: #ef4444;
+                color: #ffffff;
+                box-shadow: 0 0 12px rgba(239, 68, 68, 0.9);
+            }
+            50% {
+                opacity: 0.35;
+                transform: scale(0.95);
+                background-color: #fde047;
+                color: #991b1b;
+                box-shadow: 0 0 4px rgba(250, 204, 21, 0.6);
+            }
+        }
+        .blink-lifted {
+            animation: blinkHighlight 0.85s infinite ease-in-out;
+            padding: 3px 6px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        /* Height ruler bar indicator */
+        .height-track {
+            background: repeating-linear-gradient(
+                to bottom,
+                #fde68a,
+                #fde68a 10px,
+                #fef3c7 10px,
+                #fef3c7 20px
+            );
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Floating 3D Interactive Labels Container -->
+    <div id="labels-container" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
+
+    <!-- Center Crosshair / Eye Focus Indicator -->
+    <div id="eye-crosshair" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex flex-col items-center opacity-75">
+        <div class="w-11 h-11 rounded-full border-2 border-dashed border-white shadow-md flex items-center justify-center bg-black/10">
+            <div class="w-2.5 h-2.5 rounded-full bg-yellow-300"></div>
+        </div>
+        <span id="eye-level-hint" class="mt-1 px-2.5 py-0.5 rounded-full bg-black/45 text-white text-xs sm:text-sm font-bold tracking-wider whitespace-nowrap">
+            正前方平視線
+        </span>
+    </div>
+
+    <!-- Welcome / Character Selection Modal -->
+    <div id="welcome-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/60 backdrop-blur-sm p-4">
+        <div class="storybook-panel max-w-2xl w-full rounded-3xl p-6 md:p-8 text-center relative overflow-hidden">
+            <!-- Decorative Sun from reference illustration -->
+            <div class="w-20 h-20 rounded-full bg-orange-400 mx-auto mb-3 flex items-center justify-center shadow-lg border-4 border-dashed border-orange-300">
+                <span class="text-4xl">☀️</span>
+            </div>
+            <h1 class="text-3xl md:text-4xl font-black text-amber-900 mb-2 tracking-tight">
+                《大個子和小不點兒》
+            </h1>
+            <p class="text-base md:text-lg text-amber-950 font-bold mb-6">
+                從前，有一隻個子很大的老鼠和一隻個子很小的老鼠。他們兩個是好朋友。
+            </p>
+
+            <!-- Character Cards matching reference illustration -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <!-- Big Mouse Card -->
+                <div onclick="startGameWithRole('big')" class="cursor-pointer group bg-gradient-to-b from-red-50 to-orange-100 hover:from-red-100 hover:to-orange-200 border-4 border-red-400 rounded-2xl p-4 flex flex-col items-center justify-between transition transform hover:-translate-y-1 shadow-md">
+                    <div class="flex flex-col items-center">
+                        <div class="w-24 h-24 rounded-full bg-white border-4 border-red-400 flex items-center justify-center mb-2 shadow-inner relative">
+                            <!-- SVG Big Mouse in Red Dress/Suit -->
+                            <svg viewBox="0 0 100 100" class="w-20 h-20">
+                                <circle cx="32" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                                <circle cx="32" cy="24" r="8" fill="#fca5a5"/>
+                                <circle cx="65" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                                <circle cx="65" cy="24" r="8" fill="#fca5a5"/>
+                                <ellipse cx="52" cy="40" rx="20" ry="16" fill="#8b95a5"/>
+                                <circle cx="68" cy="38" r="3" fill="#1e293b"/>
+                                <circle cx="58" cy="36" r="2.8" fill="#111827"/>
+                                <circle cx="54" cy="44" r="4" fill="#fda4af" opacity="0.7"/>
+                                <path d="M34 54 L66 54 L74 92 L26 92 Z" fill="#ef4444" stroke="#dc2626" stroke-width="2"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-2xl font-black text-red-700">當“大個子”</h2>
+                        <p class="text-sm text-amber-900 mt-1 font-medium">
+                            穿紅衣服的大老鼠，個子很高！<br>常看到高處的東西。
+                        </p>
+                    </div>
+                    <button type="button" onclick="event.stopPropagation(); startGameWithRole('big')" class="btn-3d mt-4 w-full bg-red-500 hover:bg-red-600 text-white font-black py-2.5 px-4 rounded-xl text-base shadow-md">
+                        選我開始故事
+                    </button>
+                </div>
+
+                <!-- Small Mouse Card -->
+                <div onclick="startGameWithRole('small')" class="cursor-pointer group bg-gradient-to-b from-amber-50 to-yellow-100 hover:from-amber-100 hover:to-yellow-200 border-4 border-amber-400 rounded-2xl p-4 flex flex-col items-center justify-between transition transform hover:-translate-y-1 shadow-md">
+                    <div class="flex flex-col items-center">
+                        <div class="w-24 h-24 rounded-full bg-white border-4 border-amber-400 flex items-center justify-center mb-2 shadow-inner relative">
+                            <!-- SVG Little Mouse in Yellow Dress/Suit -->
+                            <svg viewBox="0 0 100 100" class="w-16 h-16 mt-3">
+                                <circle cx="32" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                                <circle cx="32" cy="28" r="8" fill="#fca5a5"/>
+                                <circle cx="65" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                                <circle cx="65" cy="28" r="8" fill="#fca5a5"/>
+                                <ellipse cx="48" cy="44" rx="19" ry="15" fill="#8b95a5"/>
+                                <circle cx="33" cy="42" r="3" fill="#1e293b"/>
+                                <circle cx="42" cy="40" r="2.8" fill="#111827"/>
+                                <circle cx="46" cy="48" r="4" fill="#fda4af" opacity="0.7"/>
+                                <path d="M32 58 L64 58 L70 90 L26 90 Z" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-2xl font-black text-amber-800">當“小不點兒”</h2>
+                        <p class="text-sm text-amber-900 mt-1 font-medium">
+                            穿黃衣服的小老鼠，個子小小！<br>常看到低處的東西。
+                        </p>
+                    </div>
+                    <button type="button" onclick="event.stopPropagation(); startGameWithRole('small')" class="btn-3d mt-4 w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-2.5 px-4 rounded-xl text-base shadow-md">
+                        選我開始故事
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-amber-100/80 rounded-xl p-3 text-sm text-amber-900 font-bold flex flex-wrap items-center justify-center gap-2">
+                <span>💡 貼心小提醒：進入故事後，隨時都可以切換角色視角，比較看看兩隻老鼠看到的東西呢！</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOP NAVIGATION BAR: Role Switcher & Ordered Scenes with Arrows (Optimized for iPad) -->
+    <div class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        
+        <!-- Left: Role Switcher (First-Person Height Switch) -->
+        <div class="storybook-panel rounded-2xl p-1.5 flex items-center gap-2 pointer-events-auto">
+            <span class="text-sm font-black text-amber-900 px-2 hidden md:inline">我是：</span>
+            <button id="btn-role-big" onclick="switchRole('big')" class="btn-3d px-3 py-1.5 rounded-xl font-black text-sm md:text-base flex items-center gap-2 border-2 border-transparent bg-red-100 text-red-900">
+                <span class="w-7 h-7 rounded-full bg-white border-2 border-red-400 flex items-center justify-center shadow-inner shrink-0 overflow-hidden">
+                    <svg viewBox="0 0 100 100" class="w-6 h-6">
+                        <circle cx="32" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="32" cy="24" r="8" fill="#fca5a5"/>
+                        <circle cx="65" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="65" cy="24" r="8" fill="#fca5a5"/>
+                        <ellipse cx="52" cy="40" rx="20" ry="16" fill="#8b95a5"/>
+                        <circle cx="68" cy="38" r="3" fill="#1e293b"/>
+                        <circle cx="58" cy="36" r="2.8" fill="#111827"/>
+                        <circle cx="54" cy="44" r="4" fill="#fda4af" opacity="0.7"/>
+                        <path d="M34 54 L66 54 L74 92 L26 92 Z" fill="#ef4444" stroke="#dc2626" stroke-width="2"/>
+                    </svg>
+                </span>
+                <span>大個子</span>
+            </button>
+            <button id="btn-role-small" onclick="switchRole('small')" class="btn-3d px-3 py-1.5 rounded-xl font-black text-sm md:text-base flex items-center gap-2 border-2 border-transparent bg-amber-100 text-amber-900">
+                <span class="w-7 h-7 rounded-full bg-white border-2 border-amber-400 flex items-center justify-center shadow-inner shrink-0 overflow-hidden">
+                    <svg viewBox="0 0 100 100" class="w-5 h-5 mt-1">
+                        <circle cx="32" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="32" cy="28" r="8" fill="#fca5a5"/>
+                        <circle cx="65" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="65" cy="28" r="8" fill="#fca5a5"/>
+                        <ellipse cx="48" cy="44" rx="19" ry="15" fill="#8b95a5"/>
+                        <circle cx="33" cy="42" r="3" fill="#1e293b"/>
+                        <circle cx="42" cy="40" r="2.8" fill="#111827"/>
+                        <circle cx="46" cy="48" r="4" fill="#fda4af" opacity="0.7"/>
+                        <path d="M32 58 L64 58 L70 90 L26 90 Z" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+                    </svg>
+                </span>
+                <span>小不點兒</span>
+            </button>
+        </div>
+
+        <!-- Center: Ordered Scenes Selector with "打招呼時" before "散步時" and Clear Order Arrows (➔) -->
+        <div class="storybook-panel rounded-2xl p-1.5 flex flex-wrap items-center justify-center gap-1 sm:gap-1.5 pointer-events-auto">
+            <button id="scene-btn-greet" onclick="changeToGreetingScene()" class="btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black transition">
+                打招呼時
+            </button>
+            <!-- Clear Order Arrow Greet -> 1 -->
+            <div class="text-amber-600 font-black text-base md:text-lg px-0.5 flex items-center select-none" aria-hidden="true">
+                <svg class="w-4 h-4 md:w-5 md:h-5 text-amber-600 drop-shadow-sm" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 12h14"/>
+                </svg>
+            </div>
+            <button id="scene-btn-0" onclick="changeScene(0)" class="btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black transition">
+                1. 散步時
+            </button>
+            <!-- Clear Order Arrow 1 -> 2 -->
+            <div class="text-amber-600 font-black text-base md:text-lg px-0.5 flex items-center select-none" aria-hidden="true">
+                <svg class="w-4 h-4 md:w-5 md:h-5 text-amber-600 drop-shadow-sm" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 12h14"/>
+                </svg>
+            </div>
+            <button id="scene-btn-1" onclick="changeScene(1)" class="btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black transition">
+                2. 走過院子時
+            </button>
+            <!-- Clear Order Arrow 2 -> 3 -->
+            <div class="text-amber-600 font-black text-base md:text-lg px-0.5 flex items-center select-none" aria-hidden="true">
+                <svg class="w-4 h-4 md:w-5 md:h-5 text-amber-600 drop-shadow-sm" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 12h14"/>
+                </svg>
+            </div>
+            <button id="scene-btn-2" onclick="changeScene(2)" class="btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black transition">
+                3. 走到屋子旁邊時
+            </button>
+            <!-- Clear Order Arrow 3 -> 4 -->
+            <div class="text-amber-600 font-black text-base md:text-lg px-0.5 flex items-center select-none" aria-hidden="true">
+                <svg class="w-4 h-4 md:w-5 md:h-5 text-amber-600 drop-shadow-sm" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 12h14"/>
+                </svg>
+            </div>
+            <button id="scene-btn-3" onclick="changeScene(3)" class="btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black transition">
+                4. 在屋內時
+            </button>
+        </div>
+
+        <!-- Right: Progress Badge -->
+        <div class="storybook-panel rounded-2xl p-1.5 flex items-center gap-2 pointer-events-auto">
+            <button onclick="toggleNotebookModal()" class="btn-3d bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-2 rounded-xl text-xs md:text-sm font-black flex items-center gap-1.5">
+                <span>📖 課文集章</span>
+                <span id="stamp-counter" class="bg-white text-emerald-800 px-2 py-0.5 rounded-full text-xs font-black">0/11</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- LEFT SIDE: Visual Eye-Level Height Meter -->
+    <div class="fixed left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center storybook-panel rounded-2xl p-2.5 w-20 pointer-events-auto">
+        <div class="text-xs font-black text-amber-900 text-center leading-tight mb-1.5">眼睛高度</div>
+        <div class="relative w-7 h-48 rounded-full height-track border-2 border-amber-500 overflow-hidden shadow-inner">
+            <!-- High line marker -->
+            <div class="absolute top-3 inset-x-0 border-b-2 border-dashed border-red-500"></div>
+            <!-- Low line marker -->
+            <div class="absolute bottom-4 inset-x-0 border-b-2 border-dashed border-amber-600"></div>
+            <!-- Moving Eye Indicator -->
+            <div id="height-indicator-dot" class="absolute left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-red-500 border-2 border-white shadow-md transition-all duration-500 flex items-center justify-center text-xs" style="top: 8px;">
+                👀
+            </div>
+        </div>
+        <div id="height-label-text" class="mt-2 text-xs font-black text-red-600 text-center leading-tight">
+            高處
+        </div>
+    </div>
+
+    <!-- SPECIAL SCENE EVENT BAR (Greeting Step / Rain Toggle in Scene 3 / Lift Up in Scene 4) -->
+    <div id="special-action-bar" class="fixed top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-auto hidden">
+        <!-- Populated dynamically -->
+    </div>
+
+    <!-- BOTTOM PANEL: Speech Bubble, Read Aloud + Next Location, & "用眼睛看四周" Icon Controls -->
+    <div class="fixed bottom-3 left-3 right-3 z-20 flex flex-row items-end justify-between gap-3 pointer-events-none">
+        
+        <!-- Speech & Textbook Dialogue Box -->
+        <div class="storybook-panel rounded-3xl p-4 flex-1 max-w-3xl pointer-events-auto flex flex-row items-center gap-3.5">
+            <!-- Speaker Avatar Badge (Matches Role Switcher Icons) -->
+            <div id="speaker-badge" class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-red-500 text-white flex flex-col items-center justify-center shrink-0 border-2 border-white shadow-md">
+                <div id="speaker-icon-container" class="flex items-center justify-center"></div>
+                <span id="speaker-name" class="text-xs md:text-sm font-black mt-0.5">大個子説</span>
+            </div>
+
+            <!-- Dialogue Text & Scene Narration -->
+            <div class="flex-1 text-left min-h-[3.5rem] flex flex-col justify-center">
+                <div id="speech-text" class="text-2xl md:text-3xl font-black text-slate-800 tracking-wide leading-snug"></div>
+                <div id="vision-explanation" class="text-xs md:text-sm font-bold text-amber-800 mt-1.5"></div>
+            </div>
+
+            <!-- Right Column: "🔊 朗讀" Button & "🗺️ 下一個情境 ➔" Button underneath -->
+            <div class="flex flex-col gap-2 shrink-0">
+                <button id="btn-read-aloud" onclick="replayCurrentSpeech()" class="btn-3d bg-sky-500 hover:bg-sky-600 text-white px-5 py-2.5 rounded-2xl font-black text-base md:text-lg flex items-center justify-center gap-2 opacity-50 pointer-events-none">
+                    <span class="text-xl">🔊</span>
+                    <span>朗讀</span>
+                </button>
+                <button id="btn-next-scene" onclick="goToNextLocation()" class="btn-3d bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-2xl font-black text-sm md:text-base flex items-center justify-center gap-1.5">
+                    <span class="text-lg">🗺️</span>
+                    <span>下一個情境</span>
+                    <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 12h14"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- "用眼睛看四周" Control Panel (Vertical Only, Icons Only, No Chinese inside buttons) -->
+        <div class="storybook-panel rounded-3xl p-3 pointer-events-auto flex flex-col items-center justify-center shrink-0">
+            <span class="text-xs md:text-sm font-black text-amber-900 mb-2 tracking-wide">用眼睛看四周</span>
+            <div class="flex flex-col items-center gap-2">
+                <!-- Look Up Icon Button -->
+                <button onclick="nudgeCamera(0, 0.25)" class="btn-3d bg-amber-200 hover:bg-amber-300 text-amber-950 w-16 h-12 rounded-2xl flex items-center justify-center border-2 border-amber-400" aria-label="Look Up">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
+                    </svg>
+                </button>
+
+                <!-- Look Straight Ahead / Eye Icon Button -->
+                <button onclick="resetLookFront()" class="btn-3d bg-white hover:bg-amber-50 text-amber-950 w-16 h-12 rounded-2xl flex items-center justify-center border-2 border-amber-400" aria-label="Look Straight Ahead">
+                    <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        <circle cx="12" cy="12" r="3.5" fill="currentColor"/>
+                    </svg>
+                </button>
+
+                <!-- Look Down Icon Button -->
+                <button onclick="nudgeCamera(0, -0.25)" class="btn-3d bg-amber-200 hover:bg-amber-300 text-amber-950 w-16 h-12 rounded-2xl flex items-center justify-center border-2 border-amber-400" aria-label="Look Down">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TEXTBOOK COLLECTION MODAL (課文集章冊) -->
+    <div id="notebook-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="storybook-panel max-w-3xl w-full rounded-3xl p-5 sm:p-6 max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between border-b-2 border-amber-300 pb-3 mb-3">
+                <h2 class="text-2xl font-black text-amber-900 flex items-center gap-2">
+                    <span>📖</span> 《大個子和小不點兒》課文探索紀錄
+                </h2>
+                <button onclick="toggleNotebookModal()" class="btn-3d bg-red-500 text-white w-10 h-10 rounded-full font-black text-lg">✕</button>
+            </div>
+            <p class="text-sm text-amber-800 font-bold mb-3">
+                點擊下方任何一句課文，可以直接跳到該場景並用普通話朗讀喔！
+            </p>
+            <div id="stamp-list-container" class="overflow-y-auto space-y-2 pr-1 flex-1">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /***********************************************************************
+         * 1. LESSON DATA & CURRICULUM CONTENT (《大個子和小不點兒》)
+         ***********************************************************************/
+        const EYE_HEIGHT_BIG = 6.8;     // 大個子眼睛高度 (高視角)
+        const EYE_HEIGHT_SMALL = 1.25;  // 小不點兒眼睛高度 (低視角)
+
+        // Consistent SVG Avatars matching the Role Switcher
+        const SVG_AVATAR_BIG = `
+            <span class="w-9 h-9 md:w-11 md:h-11 rounded-full bg-white border-2 border-red-400 flex items-center justify-center shadow-inner shrink-0 overflow-hidden">
+                <svg viewBox="0 0 100 100" class="w-8 h-8 md:w-10 md:h-10">
+                    <circle cx="32" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                    <circle cx="32" cy="24" r="8" fill="#fca5a5"/>
+                    <circle cx="65" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                    <circle cx="65" cy="24" r="8" fill="#fca5a5"/>
+                    <ellipse cx="52" cy="40" rx="20" ry="16" fill="#8b95a5"/>
+                    <circle cx="68" cy="38" r="3" fill="#1e293b"/>
+                    <circle cx="58" cy="36" r="2.8" fill="#111827"/>
+                    <circle cx="54" cy="44" r="4" fill="#fda4af" opacity="0.7"/>
+                    <path d="M34 54 L66 54 L74 92 L26 92 Z" fill="#ef4444" stroke="#dc2626" stroke-width="2"/>
+                </svg>
+            </span>
+        `;
+
+        const SVG_AVATAR_SMALL = `
+            <span class="w-9 h-9 md:w-11 md:h-11 rounded-full bg-white border-2 border-amber-400 flex items-center justify-center shadow-inner shrink-0 overflow-hidden">
+                <svg viewBox="0 0 100 100" class="w-7 h-7 md:w-8 md:h-8 mt-1">
+                    <circle cx="32" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                    <circle cx="32" cy="28" r="8" fill="#fca5a5"/>
+                    <circle cx="65" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                    <circle cx="65" cy="28" r="8" fill="#fca5a5"/>
+                    <ellipse cx="48" cy="44" rx="19" ry="15" fill="#8b95a5"/>
+                    <circle cx="33" cy="42" r="3" fill="#1e293b"/>
+                    <circle cx="42" cy="40" r="2.8" fill="#111827"/>
+                    <circle cx="46" cy="48" r="4" fill="#fda4af" opacity="0.7"/>
+                    <path d="M32 58 L64 58 L70 90 L26 90 Z" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+                </svg>
+            </span>
+        `;
+
+        const SVG_AVATAR_BOTH = `
+            <div class="flex items-center justify-center -space-x-2">
+                <span class="w-8 h-8 md:w-9 md:h-9 rounded-full bg-white border-2 border-red-400 flex items-center justify-center shadow-inner shrink-0 overflow-hidden z-10">
+                    <svg viewBox="0 0 100 100" class="w-7 h-7 md:w-8 md:h-8">
+                        <circle cx="32" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="32" cy="24" r="8" fill="#fca5a5"/>
+                        <circle cx="65" cy="24" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="65" cy="24" r="8" fill="#fca5a5"/>
+                        <ellipse cx="52" cy="40" rx="20" ry="16" fill="#8b95a5"/>
+                        <circle cx="68" cy="38" r="3" fill="#1e293b"/>
+                        <circle cx="58" cy="36" r="2.8" fill="#111827"/>
+                        <circle cx="54" cy="44" r="4" fill="#fda4af" opacity="0.7"/>
+                        <path d="M34 54 L66 54 L74 92 L26 92 Z" fill="#ef4444" stroke="#dc2626" stroke-width="2"/>
+                    </svg>
+                </span>
+                <span class="w-8 h-8 md:w-9 md:h-9 rounded-full bg-white border-2 border-amber-400 flex items-center justify-center shadow-inner shrink-0 overflow-hidden">
+                    <svg viewBox="0 0 100 100" class="w-6 h-6 md:w-7 md:h-7 mt-1">
+                        <circle cx="32" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="32" cy="28" r="8" fill="#fca5a5"/>
+                        <circle cx="65" cy="28" r="14" fill="#7c8594" stroke="#525866" stroke-width="2"/>
+                        <circle cx="65" cy="28" r="8" fill="#fca5a5"/>
+                        <ellipse cx="48" cy="44" rx="19" ry="15" fill="#8b95a5"/>
+                        <circle cx="33" cy="42" r="3" fill="#1e293b"/>
+                        <circle cx="42" cy="40" r="2.8" fill="#111827"/>
+                        <circle cx="46" cy="48" r="4" fill="#fda4af" opacity="0.7"/>
+                        <path d="M32 58 L64 58 L70 90 L26 90 Z" fill="#f59e0b" stroke="#d97706" stroke-width="2"/>
+                    </svg>
+                </span>
+            </div>
+        `;
+
+        const STORY_STAMP_ITEMS = [
+            { id: 'bird', scene: 0, speaker: 'big', targetName: '小鳥', line: '嘿，小鳥，你們好！', desc: '散步時，大個子平視看見樹枝上的小鳥' },
+            { id: 'beetle', scene: 0, speaker: 'small', targetName: '獨角仙', line: '嘿，獨角仙，你們好！', desc: '散步時，小不點兒平視看見樹幹低處的獨角仙' },
+            { id: 'flower', scene: 1, speaker: 'big', targetName: '花朵', line: '嘿，花朵，你們好！', desc: '走過院子時，大個子平視看見高高盛開的花朵' },
+            { id: 'root', scene: 1, speaker: 'small', targetName: '樹根', line: '嘿，樹根，你們好！', desc: '走過院子時，小不點兒平視看見地面粗壯的樹根' },
+            { id: 'roof', scene: 2, subState: 'sunny', speaker: 'big', targetName: '屋頂', line: '嘿，屋頂，你好！', desc: '從屋子旁邊走過時，大個子平視看見紅瓦屋頂' },
+            { id: 'basement', scene: 2, subState: 'sunny', speaker: 'small', targetName: '地下室', line: '嘿，地下室，你好！', desc: '從屋子旁邊走過時，小不點兒平視看見牆角地下室窗戶' },
+            { id: 'raindrop', scene: 2, subState: 'rain', speaker: 'big', targetName: '雨點兒', line: '嘿，雨點兒，你好！', desc: '遇上大雨時，大個子看見空中落下的雨點兒' },
+            { id: 'puddle', scene: 2, subState: 'rain', speaker: 'small', targetName: '水坑', line: '嘿，水坑，你好！', desc: '遇上大雨時，小不點兒看見地面積水的水坑' },
+            { id: 'ceiling', scene: 3, subState: 'inside', speaker: 'big', targetName: '天棚', line: '嘿，天棚，你好！', desc: '跑進屋子裏躲雨時，大個子平視看見屋頂的天棚' },
+            { id: 'floor', scene: 3, subState: 'inside', speaker: 'small', targetName: '地板', line: '嘿，地板，你好！', desc: '跑進屋子裏躲雨時，小不點兒平視看見腳下的木地板' },
+            { id: 'rainbow', scene: 3, subState: 'rainbow', speaker: 'both', targetName: '彩虹', line: '嘿，彩虹，你好！', desc: '大雨停了，大個子把小不點兒舉起來，一起看見窗外的彩虹' }
+        ];
+
+        const collectedStamps = new Set();
+
+        // Game State
+        let currentRole = 'big';          // 'big' | 'small'
+        let isGreetingStep = false;       // Step 0: Meet & Greet friend before entering Scene 0 (散步時)
+        let hasGreetedFriend = false;     // Whether the player has greeted their friend in the Greeting Step
+        let welcomeIntroTimer = null;     // Timer for speaking the welcome intro
+        let hasSpokenWelcomeIntro = false;
+        let currentSceneIndex = 0;        // 0: 散步時, 1: 走過院子時, 2: 走到屋子旁邊時, 3: 在屋內時
+        let isRainingInScene2 = false;    // Scene 2 toggle: Sunny vs Heavy Rain
+        let hasClickedSunnyTargetInScene2 = false; // Must click roof/basement before showing Rain button
+        let isLiftedInScene3 = false;     // Scene 3 toggle: Big Mouse lifts Small Mouse at window
+        let hasClickedIndoorTargetInScene3 = false; // Must click ceiling/floor before showing Lift Up button
+        let currentSpeechLine = '';
+        let currentSpeechSpeaker = 'big';
+
+        // Camera First-Person State
+        let camYaw = 0;                   // Horizontal look angle (radians)
+        let camPitch = 0;                 // Vertical look angle (radians)
+        let targetYaw = 0;
+        let targetPitch = 0;
+        let currentEyeY = EYE_HEIGHT_BIG;
+        let targetEyeY = EYE_HEIGHT_BIG;
+
+        /***********************************************************************
+         * 2. MANDARIN SPEECH SYNTHESIS (國語/普通話發音 zh-CN) & SOUND EFFECTS
+         ***********************************************************************/
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) audioCtx = new AudioContextClass();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playChimeSound(type = 'greet') {
+            try {
+                initAudio();
+                if (!audioCtx) return;
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'greet') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now);       // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.09); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.18); // G5
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+                    osc.start(now);
+                    osc.stop(now + 0.45);
+                } else if (type === 'switch') {
+                    osc.type = 'sine';
+                    const startFreq = currentRole === 'big' ? 320 : 620;
+                    const endFreq = currentRole === 'big' ? 580 : 340;
+                    osc.frequency.setValueAtTime(startFreq, now);
+                    osc.frequency.linearRampToValueAtTime(endFreq, now + 0.3);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+                    osc.start(now);
+                    osc.stop(now + 0.32);
+                }
+            } catch (e) {
+                // Ignore audio context restrictions
+            }
+        }
+
+        // Mandarin-only voice selection for iPad Safari and other browsers.
+        // IMPORTANT: iPadOS can still override even an explicitly selected voice.
+        // For guaranteed identical Mandarin across devices, use pre-recorded MP3 files.
+        function isMandarinVoice(v) {
+            const lang = String(v.lang || '').replace(/_/g, '-').toLowerCase();
+            const name = String(v.name || '').toLowerCase();
+            const uri = String(v.voiceURI || '').toLowerCase();
+            if (/cantonese|yue|粵|粤|sin-ji|sinji/.test(name + ' ' + uri)) return false;
+            if (/^(?:zh-(?:hk|mo)(?:-|$)|yue(?:-|$))/.test(lang)) return false;
+            // zh-CN, zh-SG, zh-TW and cmn-* are Mandarin locales.
+            return /^(?:zh-(?:cn|sg|tw)(?:-|$)|cmn(?:-|$))/.test(lang);
+        }
+
+        function getBestMandarinVoice() {
+            if (!('speechSynthesis' in window)) return null;
+            const voices = window.speechSynthesis.getVoices() || [];
+            const choices = voices.filter(isMandarinVoice);
+            if (!choices.length) return null; // NEVER fall back to a Cantonese / unknown voice.
+            const priority = (v) => {
+                const lang = String(v.lang || '').replace(/_/g, '-').toLowerCase();
+                const name = String(v.name || '').toLowerCase();
+                let score = 0;
+                if (lang === 'zh-cn') score = 100;
+                else if (lang.startsWith('zh-cn-') || lang.startsWith('cmn-hans-cn')) score = 90;
+                else if (lang === 'zh-sg') score = 80;
+                else if (lang.startsWith('cmn')) score = 70;
+                else if (lang.startsWith('zh-tw')) score = 60;
+                if (/ting-?ting|yu-?shu|xiaoxiao|putonghua/.test(name)) score += 3;
+                return score;
+            };
+            choices.sort((a, b) => priority(b) - priority(a));
+            return choices[0];
+        }
+
+        // Show a clear message rather than silently switching to Cantonese.
+        function showMandarinVoiceWarning() {
+            if (document.getElementById('mandarin-voice-warning')) return;
+            const div = document.createElement('div');
+            div.id = 'mandarin-voice-warning';
+            div.setAttribute('role', 'status');
+            div.style.cssText = 'position:fixed;z-index:1000;left:50%;bottom:18px;transform:translateX(-50%);max-width:640px;width:calc(100% - 32px);padding:12px 16px;background:#fff8db;color:#753800;border:2px solid #f59e0b;border-radius:16px;box-shadow:0 6px 22px #0003;font-size:15px;font-weight:700;line-height:1.5;text-align:center;';
+            div.textContent = '⚠️ 未找到普通話語音，因此暫停朗讀，避免播出粵語。請到 iPad「設定 → 輔助使用 → 朗讀內容／閱讀與朗讀 → 聲音 → 中文」選擇普通話語音，然後重新載入網頁。';
+            document.body.appendChild(div);
+        }
+
+        function hideMandarinVoiceWarning() {
+            const warning = document.getElementById('mandarin-voice-warning');
+            if (warning) warning.remove();
+        }
+
+        function speakMandarin(text, speakerType = 'big') {
+            if (!('speechSynthesis' in window) || !text) {
+                showMandarinVoiceWarning();
+                return false;
+            }
+            try {
+                const voice = getBestMandarinVoice();
+                if (!voice) {
+                    window.speechSynthesis.cancel();
+                    showMandarinVoiceWarning();
+                    console.warn('[普通話朗讀] 裝置沒有提供可用的普通話語音。',
+                        (window.speechSynthesis.getVoices() || []).map(v => ({name: v.name, lang: v.lang})));
+                    return false;
+                }
+                hideMandarinVoiceWarning();
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.voice = voice;       // Must assign the actual Mandarin voice object.
+                utter.lang = voice.lang;   // Match the selected voice's Mandarin locale.
+                if (speakerType === 'big') {
+                    utter.pitch = 0.88;
+                    utter.rate = 0.92;
+                } else if (speakerType === 'small') {
+                    utter.pitch = 1.10;
+                    utter.rate = 0.94;
+                } else {
+                    utter.pitch = 1.0;
+                    utter.rate = 0.92;
+                }
+                utter.onerror = e => console.warn('[普通話朗讀] 無法播放：', e.error || e);
+                window.speechSynthesis.speak(utter);
+                return true;
+            } catch (err) {
+                console.warn('[普通話朗讀] 語音合成發生錯誤：', err);
+                return false;
+            }
+        }
+
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                if (getBestMandarinVoice()) hideMandarinVoiceWarning();
+            };
+        }
+
+        function replayCurrentSpeech() {
+            if (!currentSpeechLine) return;
+            playChimeSound('greet');
+            speakMandarin(currentSpeechLine, currentSpeechSpeaker);
+        }
+
+        /***********************************************************************
+         * 3. THREE.JS 3D WORLD & STORYBOOK ILLUSTRATION ASSETS
+         ***********************************************************************/
+        let scene, camera, renderer, raycaster, mouse;
+        let sceneGroup = new THREE.Group();
+        let companionGroup = new THREE.Group();
+        let animatedObjects = [];
+        let interactiveTargets = [];
+        let rainDropMeshes = [];
+
+        // Soft Storybook Colors matching the reference illustration
+        const COLORS = {
+            skySunny: 0xcbe8f6,
+            skyRain: 0x7fa1b8,
+            skyIndoor: 0xfef3c7,
+            grassLight: 0xd9e872,
+            grassMid: 0xb5d354,
+            sunOrange: 0xf5923e,
+            mouseGrey: 0x87909f,
+            mouseDarkGrey: 0x5c6472,
+            mouseEarPink: 0xf4afab,
+            bigRedDress: 0xef5a47,
+            smallYellowDress: 0xf4b63d,
+            treeBark: 0x8c6d53,
+            rootBrown: 0x735135,
+            leafGreen: 0x8bc34a,
+            houseWall: 0xf4f9fc,
+            houseRoof: 0xee6247,
+            birdBlue: 0x6ba2b9,
+            beetleShell: 0x5a231c
+        };
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(COLORS.skySunny);
+            scene.fog = new THREE.FogExp2(COLORS.skySunny, 0.012);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.2, 200);
+            camera.position.set(0, EYE_HEIGHT_BIG, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Warm Storybook Lighting
+            const ambientLight = new THREE.AmbientLight(0xfffbeb, 0.78);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xfff7ed, 0.65);
+            dirLight.position.set(-15, 30, 18);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            scene.add(sceneGroup);
+            scene.add(companionGroup);
+
+            setupInteractionEvents(renderer.domElement);
+            window.addEventListener('resize', onWindowResize);
+
+            // Build initial scene
+            buildScene(0);
+        }
+
+        /***********************************************************************
+         * 4. CLEAR, UNOBSTRUCTED 3D MODELS (Matching Reference Art)
+         ***********************************************************************/
+
+        // Create Storybook Sun with dashed rays (top-left of sky like reference image)
+        function createStorybookSun() {
+            const sunGroup = new THREE.Group();
+            const coreMat = new THREE.MeshBasicMaterial({ color: COLORS.sunOrange });
+            const core = new THREE.Mesh(new THREE.SphereGeometry(3.2, 24, 24), coreMat);
+            sunGroup.add(core);
+
+            // Dashed rays around sun
+            const rayCount = 14;
+            for (let i = 0; i < rayCount; i++) {
+                const angle = (i / rayCount) * Math.PI * 2;
+                const ray = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.22, 0.22, 0.9, 8),
+                    coreMat
+                );
+                ray.position.set(Math.cos(angle) * 4.3, Math.sin(angle) * 4.3, 0);
+                ray.rotation.z = angle - Math.PI / 2;
+                sunGroup.add(ray);
+            }
+            sunGroup.position.set(-18, 22, -32);
+            return sunGroup;
+        }
+
+        // Create Companion Mouse Model (either Big Mouse in Red or Little Mouse in Yellow)
+        function createMouseCharacter(type) {
+            const isBig = type === 'big';
+            const group = new THREE.Group();
+            const scale = isBig ? 1.0 : 0.26; // Realistic relative scale between Big Mouse and Little Mouse!
+
+            const greyMat = new THREE.MeshLambertMaterial({ color: COLORS.mouseGrey });
+            const pinkMat = new THREE.MeshLambertMaterial({ color: COLORS.mouseEarPink });
+            const dressMat = new THREE.MeshLambertMaterial({
+                color: isBig ? COLORS.bigRedDress : COLORS.smallYellowDress
+            });
+            const darkMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
+
+            // Dress / Tunic Body
+            const dress = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.45, 4.4, 20), dressMat);
+            dress.position.y = 2.8;
+            group.add(dress);
+
+            // Waist line detail like the drawing
+            const belt = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.05, 8, 24), new THREE.MeshBasicMaterial({ color: isBig ? 0xd93829 : 0xd99b26 }));
+            belt.rotation.x = Math.PI / 2;
+            belt.position.y = 2.9;
+            group.add(belt);
+
+            // Legs & Feet
+            [-0.45, 0.45].forEach(xOffset => {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.16, 1.0, 10), greyMat);
+                leg.position.set(xOffset, 0.5, 0);
+                group.add(leg);
+                const foot = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 10), greyMat);
+                foot.scale.set(1, 0.5, 1.8);
+                foot.position.set(xOffset, 0.14, 0.22);
+                group.add(foot);
+            });
+
+            // Long Mouse Tail curving behind
+            const tailCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, 0.9, -1.2),
+                new THREE.Vector3(0.4, 0.3, -2.4),
+                new THREE.Vector3(-0.3, 0.15, -3.5)
+            ]);
+            const tailGeo = new THREE.TubeGeometry(tailCurve, 16, 0.12, 8, false);
+            const tail = new THREE.Mesh(tailGeo, greyMat);
+            group.add(tail);
+
+            // Head & Pointed Snout (like the storybook profile)
+            const headGroup = new THREE.Group();
+            headGroup.position.set(0, 5.6, 0);
+
+            const skull = new THREE.Mesh(new THREE.SphereGeometry(1.05, 20, 20), greyMat);
+            headGroup.add(skull);
+
+            const snout = new THREE.Mesh(new THREE.ConeGeometry(0.75, 1.6, 16), greyMat);
+            snout.rotation.x = Math.PI / 2;
+            snout.position.set(0, 0.05, 1.15);
+            headGroup.add(snout);
+
+            const nose = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), darkMat);
+            nose.position.set(0, 0.08, 1.95);
+            headGroup.add(nose);
+
+            // Rosy Cheeks
+            [-0.78, 0.78].forEach(x => {
+                const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), pinkMat);
+                cheek.position.set(x, -0.15, 0.55);
+                headGroup.add(cheek);
+            });
+
+            // Eyes
+            [-0.52, 0.52].forEach(x => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), darkMat);
+                eye.position.set(x, 0.32, 0.88);
+                headGroup.add(eye);
+            });
+
+            // Big Round Mouse Ears
+            [-0.75, 0.75].forEach(x => {
+                const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.68, 0.18, 20), greyMat);
+                ear.rotation.x = Math.PI / 2;
+                ear.position.set(x, 0.95, -0.15);
+                headGroup.add(ear);
+
+                const innerEar = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.2, 16), pinkMat);
+                innerEar.rotation.x = Math.PI / 2;
+                innerEar.position.set(x, 0.95, -0.13);
+                headGroup.add(innerEar);
+            });
+
+            group.add(headGroup);
+
+            // Waving Arm
+            const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 1.5, 10), greyMat);
+            arm.position.set(0.95, 4.2, 0.4);
+            arm.rotation.z = -0.6;
+            arm.rotation.x = -0.4;
+            group.add(arm);
+
+            group.scale.set(scale, scale, scale);
+            return group;
+        }
+
+        // 1A. DISTINCT 3D SONGBIRD (小鳥) - High on branch, clear silhouette
+        function createBirdModel(colorHex = 0x5c9ead) {
+            const bird = new THREE.Group();
+            const bodyMat = new THREE.MeshLambertMaterial({ color: colorHex });
+            const bellyMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0 });
+            const beakMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+
+            // Plump Body
+            const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 18), bodyMat);
+            body.scale.set(1.35, 0.95, 0.9);
+            bird.add(body);
+
+            // Soft Belly
+            const belly = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 16), bellyMat);
+            belly.scale.set(1.25, 0.85, 0.85);
+            belly.position.set(0.08, -0.1, 0);
+            bird.add(belly);
+
+            // Head
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), bodyMat);
+            head.position.set(0.58, 0.42, 0);
+            bird.add(head);
+
+            // Distinct Yellow Cone Beak
+            const beak = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.48, 12), beakMat);
+            beak.rotation.z = -Math.PI / 2;
+            beak.position.set(1.12, 0.42, 0);
+            bird.add(beak);
+
+            // Eyes with white ring for crisp visibility
+            [-0.32, 0.32].forEach(z => {
+                const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+                eyeWhite.position.set(0.72, 0.5, z);
+                bird.add(eyeWhite);
+                const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), eyeMat);
+                pupil.position.set(0.77, 0.5, z * 1.05);
+                bird.add(pupil);
+            });
+
+            // Wings (Animated flapping)
+            const wingGeo = new THREE.SphereGeometry(0.45, 12, 12);
+            wingGeo.scale(1.1, 0.22, 0.75);
+            const leftWing = new THREE.Mesh(wingGeo, bodyMat);
+            leftWing.position.set(-0.05, 0.1, 0.48);
+            leftWing.rotation.x = 0.35;
+            bird.add(leftWing);
+
+            const rightWing = new THREE.Mesh(wingGeo, bodyMat);
+            rightWing.position.set(-0.05, 0.1, -0.48);
+            rightWing.rotation.x = -0.35;
+            bird.add(rightWing);
+
+            // Tail Feathers
+            const tail = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.85, 4), bodyMat);
+            tail.rotation.z = Math.PI / 2.4;
+            tail.scale.set(1, 1, 0.3);
+            tail.position.set(-0.95, 0.22, 0);
+            bird.add(tail);
+
+            // Slender Legs perched on branch
+            [-0.18, 0.18].forEach(z => {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.45, 6), beakMat);
+                leg.position.set(0.05, -0.62, z);
+                bird.add(leg);
+            });
+
+            bird.userData.wings = [leftWing, rightWing];
+            return bird;
+        }
+
+        // 1B. DISTINCT 3D RHINOCEROS BEETLE (獨角仙) - Low on tree trunk, iconic Y-horn silhouette
+        function createBeetleModel() {
+            const beetle = new THREE.Group();
+            const shellMat = new THREE.MeshPhongMaterial({
+                color: 0x4a1c17,
+                shininess: 90,
+                specular: 0x995544
+            });
+            const hornMat = new THREE.MeshPhongMaterial({
+                color: 0x2d110e,
+                shininess: 100
+            });
+
+            // Rounded glossy abdomen/elytra (wing covers)
+            const body = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 20), shellMat);
+            body.scale.set(1.45, 0.82, 1.05);
+            beetle.add(body);
+
+            // Thorax (Pronotum)
+            const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), shellMat);
+            thorax.scale.set(1.0, 0.8, 0.95);
+            thorax.position.set(0.55, 0.05, 0);
+            beetle.add(thorax);
+
+            // Small Thoracic Horn
+            const topHorn = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.35, 10), hornMat);
+            topHorn.rotation.z = -Math.PI / 3;
+            topHorn.position.set(0.75, 0.28, 0);
+            beetle.add(topHorn);
+
+            // Head
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 14), hornMat);
+            head.position.set(0.82, -0.02, 0);
+            beetle.add(head);
+
+            // Bright Eyes so kids spot the face easily
+            [-0.14, 0.14].forEach(z => {
+                const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfbbf24 }));
+                eye.position.set(0.92, 0.05, z);
+                beetle.add(eye);
+            });
+
+            // ICONIC BIG CURVED CEPHALIC HORN (獨角仙的大犄角) with Y-forked tip
+            const hornCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0.92, -0.02, 0),
+                new THREE.Vector3(1.32, 0.12, 0),
+                new THREE.Vector3(1.55, 0.52, 0)
+            ]);
+            const mainHorn = new THREE.Mesh(new THREE.TubeGeometry(hornCurve, 12, 0.065, 8, false), hornMat);
+            beetle.add(mainHorn);
+
+            // Y-shaped prongs at the tip of the horn
+            [-0.1, 0.1].forEach(z => {
+                const prong = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.22, 8), hornMat);
+                prong.position.set(1.58, 0.62, z);
+                prong.rotation.x = z > 0 ? 0.45 : -0.45;
+                prong.rotation.z = -0.3;
+                beetle.add(prong);
+            });
+
+            // 6 Distinct Jointed Beetle Legs
+            [-0.35, 0.05, 0.42].forEach(x => {
+                [-1, 1].forEach(side => {
+                    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.55, 8), hornMat);
+                    leg.position.set(x, -0.18, side * 0.45);
+                    leg.rotation.x = side * 0.9;
+                    beetle.add(leg);
+                });
+            });
+
+            return beetle;
+        }
+
+        // 2A. TALL BLOOMING FLOWER (花朵) - At Big Mouse's eye level (~6.8m)
+        function createTallFlower(x, z, petalColor = 0xfacc15, height = 6.6) {
+            const flowerGroup = new THREE.Group();
+            const stemMat = new THREE.MeshLambertMaterial({ color: 0x65a30d });
+
+            // Sturdy Tall Green Stem
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, height, 12), stemMat);
+            stem.position.y = height / 2;
+            flowerGroup.add(stem);
+
+            // Stem Leaves at mid height (above Little Mouse's root view so zero obstruction!)
+            [-1, 1].forEach((dir, i) => {
+                const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), stemMat);
+                leaf.scale.set(1.6, 0.18, 0.65);
+                leaf.position.set(dir * 0.55, 3.2 + i * 0.9, 0);
+                leaf.rotation.z = dir * 0.4;
+                flowerGroup.add(leaf);
+            });
+
+            // Flower Blossom Head tilted slightly toward the player
+            const head = new THREE.Group();
+            head.position.set(0, height, 0);
+            head.rotation.x = 0.35;
+
+            const center = new THREE.Mesh(
+                new THREE.SphereGeometry(0.52, 16, 16),
+                new THREE.MeshLambertMaterial({ color: 0xd97706 })
+            );
+            center.scale.set(1, 1, 0.45);
+            head.add(center);
+
+            const petalMat = new THREE.MeshLambertMaterial({ color: petalColor });
+            const numPetals = 10;
+            for (let i = 0; i < numPetals; i++) {
+                const angle = (i / numPetals) * Math.PI * 2;
+                const petal = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 12), petalMat);
+                petal.scale.set(0.62, 1.45, 0.25);
+                petal.position.set(Math.cos(angle) * 0.78, Math.sin(angle) * 0.78, -0.05);
+                petal.rotation.z = angle - Math.PI / 2;
+                head.add(petal);
+            }
+
+            flowerGroup.add(head);
+            flowerGroup.position.set(x, 0, z);
+            return flowerGroup;
+        }
+
+        /***********************************************************************
+         * 5. SCENE BUILDERS FOR ALL 4 TEXTBOOK SCENES
+         ***********************************************************************/
+        function disposeHierarchy(node) {
+            if (!node) return;
+            node.traverse((child) => {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
+
+        function clearCurrentScene() {
+            while (sceneGroup.children.length > 0) {
+                const obj = sceneGroup.children[0];
+                sceneGroup.remove(obj);
+                disposeHierarchy(obj);
+            }
+            while (companionGroup.children.length > 0) {
+                const obj = companionGroup.children[0];
+                companionGroup.remove(obj);
+                disposeHierarchy(obj);
+            }
+            animatedObjects = [];
+            interactiveTargets = [];
+            rainDropMeshes = [];
+            const labelsContainer = document.getElementById('labels-container');
+            if (labelsContainer) labelsContainer.innerHTML = '';
+        }
+
+        // Strict Role Check: Can the current role click and read aloud this target?
+        function isTargetSelectableByCurrentRole(targetInfo) {
+            if (!targetInfo) return false;
+            // In Scene 2, after clicking "遇上大雨！", do NOT show or read aloud Roof & Basement
+            if (currentSceneIndex === 2 && isRainingInScene2) {
+                if (targetInfo.stampId === 'roof' || targetInfo.stampId === 'basement') {
+                    return false;
+                }
+            }
+            // In Scene 3, after clicking "大個子把小不點兒舉起來看窗外彩虹！", do NOT show or read aloud Floor or Ceiling
+            if (currentSceneIndex === 3 && isLiftedInScene3) {
+                if (targetInfo.stampId === 'floor' || targetInfo.stampId === 'ceiling') {
+                    return false;
+                }
+            }
+            // In Scene 3, Rainbow is ONLY selectable & visible after Big Mouse lifts up Small Mouse
+            if (targetInfo.stampId === 'rainbow') {
+                return currentSceneIndex === 3 && isLiftedInScene3;
+            }
+            if (targetInfo.roleHint === 'both') return true;
+            return targetInfo.roleHint === currentRole;
+        }
+
+        function registerInteractiveTarget(meshOrGroup, info) {
+            const targetObj = {
+                object: meshOrGroup,
+                worldPos: info.worldPos, // Side-offset 3D anchor so label NEVER blocks the 3D object
+                lookAtPos: info.lookAtPos || info.worldPos, // True center of the 3D object for camera aiming
+                fixedScreenPos: info.fixedScreenPos || null,
+                labelSide: info.labelSide || 'right', // 'left' | 'right' side callout
+                hideSideLabel: !!info.hideSideLabel, // True for companion friend
+                isCompanion: !!info.isCompanion,
+                title: info.title,
+                roleHint: info.roleHint, // 'big' | 'small' | 'both'
+                stampId: info.stampId,
+                speaker: info.speaker,
+                speech: info.speech,
+                explanation: info.explanation,
+                domElement: null
+            };
+
+            if (!targetObj.hideSideLabel) {
+                // Create side-offset HTML callout badge with leader line so text NEVER covers the 3D model
+                const container = document.getElementById('labels-container');
+                const el = document.createElement('div');
+                const isLeft = targetObj.labelSide === 'left';
+                el.className = `label-3d ${isLeft ? 'label-side-left' : 'label-side-right'}`;
+
+                el.onclick = (e) => {
+                    e.stopPropagation();
+                    if (!isTargetSelectableByCurrentRole(targetObj)) return;
+                    triggerTargetGreeting(targetObj);
+                };
+                container.appendChild(el);
+                targetObj.domElement = el;
+            }
+
+            interactiveTargets.push(targetObj);
+            refreshTargetLabelAppearance(targetObj);
+        }
+
+        // Scene Narration Helper (First-person narration for Small Mouse & Big Mouse)
+        function getSceneNarrationText(role = currentRole, sceneIdx = currentSceneIndex, raining = isRainingInScene2, lifted = isLiftedInScene3, greeting = isGreetingStep) {
+            if (greeting) {
+                return role === 'big'
+                    ? '我與小不點兒見面時，總是這樣打招呼。'
+                    : '我與大個子見面時，總是這樣打招呼。';
+            }
+            if (role === 'small') {
+                if (sceneIdx === 0) return '散步時，我在低低的草叢裏看到了獨角仙。';
+                if (sceneIdx === 1) return '走過院子的時候，我在大樹底下看到了粗壯的樹根。';
+                if (sceneIdx === 2) {
+                    return raining
+                        ? '遇上大雨時，我看到了地面積起的水坑。'
+                        : '從屋子旁邊走過時，我看到了牆角低處的地下室。';
+                }
+                if (sceneIdx === 3) {
+                    return lifted
+                        ? '大雨停了，大個子想讓我看看窗外的景色，就把我舉了起來。我們一齊看到了窗外美麗的彩虹。'
+                        : '跑進屋子躲雨時，我個子小，一進屋就看到腳下的地板。';
+                }
+            } else {
+                if (sceneIdx === 0) return '散步時，我在高高的樹上看到了小鳥。';
+                if (sceneIdx === 1) return '走過院子的時候，我看到了正在盛開的花朵。';
+                if (sceneIdx === 2) {
+                    return raining
+                        ? '遇上大雨時，我看到了空中落下的雨點兒。'
+                        : '從屋子旁邊走過時，我看到了高處的紅瓦屋頂。';
+                }
+                if (sceneIdx === 3) {
+                    return lifted
+                        ? '大雨停了，我想讓小不點兒看看窗外的景色，就把小不點兒舉了起來。我們一齊看到了窗外美麗的彩虹。'
+                        : '跑進屋子躲雨時，我個子高，一進屋就看到頭頂上的天棚。';
+                }
+            }
+            return '';
+        }
+
+        function speakCurrentSceneNarration() {
+            const modal = document.getElementById('welcome-modal');
+            if (modal && !modal.classList.contains('hidden')) return;
+            const text = getSceneNarrationText(currentRole, currentSceneIndex, isRainingInScene2, isLiftedInScene3, isGreetingStep);
+            if (text) {
+                const expEl = document.getElementById('vision-explanation');
+                if (expEl) {
+                    expEl.textContent = `💡 ${text}`;
+                }
+                speakMandarin(text, currentRole);
+            }
+        }
+
+        function refreshTargetLabelAppearance(targetObj) {
+            if (!targetObj || !targetObj.domElement) return;
+            const el = targetObj.domElement;
+            const canSelect = isTargetSelectableByCurrentRole(targetObj);
+            const isLeft = targetObj.labelSide === 'left';
+
+            // Do not display the label if it is hidden or does not belong to the current state/role
+            if (targetObj.hideSideLabel || !canSelect) {
+                el.className = `label-3d ${isLeft ? 'label-side-left' : 'label-side-right'} label-disabled`;
+                el.style.display = 'none';
+                return;
+            }
+
+            el.style.display = 'block';
+            el.className = `label-3d ${isLeft ? 'label-side-left' : 'label-side-right'} label-active`;
+
+            let badgeStyle = 'bg-white/95 border-amber-500 text-amber-950';
+            let dotColor = 'bg-amber-400 border-white';
+            let lineColor = 'bg-amber-400';
+
+            if (targetObj.roleHint === 'big') {
+                badgeStyle = 'bg-red-500 text-white border-white ring-4 ring-red-300/60';
+                dotColor = 'bg-red-500 border-white';
+                lineColor = 'bg-white';
+            } else if (targetObj.roleHint === 'small') {
+                badgeStyle = 'bg-amber-400 text-amber-950 border-white ring-4 ring-amber-200/70';
+                dotColor = 'bg-amber-400 border-white';
+                lineColor = 'bg-white';
+            } else {
+                badgeStyle = 'bg-gradient-to-r from-red-500 via-amber-400 to-emerald-500 text-white border-white ring-4 ring-amber-200/70';
+                dotColor = 'bg-yellow-300 border-white';
+                lineColor = 'bg-white';
+            }
+
+            const connectorHTML = isLeft
+                ? `<div class="flex items-center shrink-0">
+                       <div class="w-6 md:w-9 h-1 ${lineColor} shadow-sm rounded-full"></div>
+                       <div class="w-3.5 h-3.5 rounded-full ${dotColor} border-2 shadow-md"></div>
+                   </div>`
+                : `<div class="flex items-center shrink-0">
+                       <div class="w-3.5 h-3.5 rounded-full ${dotColor} border-2 shadow-md"></div>
+                       <div class="w-6 md:w-9 h-1 ${lineColor} shadow-sm rounded-full"></div>
+                   </div>`;
+
+            // Side label only displays Traditional Chinese object name without speaker icon
+            const pillHTML = `
+                <div class="label-pill transition-transform px-4 py-2 rounded-2xl border-2 shadow-xl font-black text-lg md:text-xl flex items-center justify-center whitespace-nowrap ${badgeStyle}">
+                    <span>${targetObj.title}</span>
+                </div>
+            `;
+
+            el.innerHTML = `
+                <div class="animate-float flex items-center">
+                    ${isLeft ? pillHTML + connectorHTML : connectorHTML + pillHTML}
+                </div>
+            `;
+        }
+
+        function refreshAllTargetLabels() {
+            interactiveTargets.forEach(t => refreshTargetLabelAppearance(t));
+        }
+
+        // Spawn Companion Friend next to player
+        // In Greeting Step (isGreetingStep === true), friend stands right in front and when greeted, Big Mouse looks down to see the whole Small Mouse, while Small Mouse looks up to see Big Mouse's upper body!
+        function buildCompanionFriend() {
+            while (companionGroup.children.length > 0) {
+                const obj = companionGroup.children[0];
+                companionGroup.remove(obj);
+                disposeHierarchy(obj);
+            }
+            // Remove any previous companion interactive entries
+            interactiveTargets = interactiveTargets.filter(t => !t.isCompanion);
+
+            if (currentRole === 'big') {
+                const smallFriend = createMouseCharacter('small');
+                const friendY = (currentSceneIndex === 3 && isLiftedInScene3) ? 5.2 : 0;
+                const posX = isGreetingStep ? 0 : -2.4;
+                const posZ = isGreetingStep ? -6.2 : -4.2;
+                smallFriend.position.set(posX, friendY, posZ);
+                smallFriend.rotation.y = isGreetingStep ? 0 : 0.55;
+                companionGroup.add(smallFriend);
+
+                registerInteractiveTarget(smallFriend, {
+                    worldPos: new THREE.Vector3(posX + 0.95, friendY + 0.95, posZ),
+                    lookAtPos: new THREE.Vector3(posX, friendY + 0.85, posZ),
+                    fixedScreenPos: isGreetingStep ? { xPct: 58, yPct: 54 } : null,
+                    labelSide: 'right',
+                    hideSideLabel: true,
+                    isCompanion: true,
+                    title: '小不點兒',
+                    roleHint: 'big',
+                    stampId: null,
+                    speaker: 'big',
+                    speech: '嘿，小不點兒。',
+                    explanation: '💡 我與小不點兒見面時，總是這樣打招呼。'
+                });
+            } else {
+                const bigFriend = createMouseCharacter('big');
+                const posX = isGreetingStep ? 0 : -2.8;
+                const posZ = isGreetingStep ? -5.8 : -4.6;
+                bigFriend.position.set(posX, 0, posZ);
+                bigFriend.rotation.y = isGreetingStep ? 0 : 0.5;
+                companionGroup.add(bigFriend);
+
+                registerInteractiveTarget(bigFriend, {
+                    worldPos: new THREE.Vector3(posX + 1.55, 5.0, posZ),
+                    lookAtPos: new THREE.Vector3(posX, 5.0, posZ),
+                    fixedScreenPos: isGreetingStep ? { xPct: 62, yPct: 45 } : null,
+                    labelSide: 'right',
+                    hideSideLabel: true,
+                    isCompanion: true,
+                    title: '大個子',
+                    roleHint: 'small',
+                    stampId: null,
+                    speaker: 'small',
+                    speech: '嘿，大個子。',
+                    explanation: '💡 我與大個子見面時，總是這樣打招呼。'
+                });
+            }
+        }
+
+        function createPastelGround(colorHex = COLORS.grassLight) {
+            const ground = new THREE.Mesh(
+                new THREE.CircleGeometry(90, 48),
+                new THREE.MeshLambertMaterial({ color: colorHex })
+            );
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            sceneGroup.add(ground);
+
+            // Decorative soft grass tufts far on the sides (NEVER in front of low targets!)
+            const tuftMat = new THREE.MeshLambertMaterial({ color: COLORS.grassMid });
+            for (let i = 0; i < 36; i++) {
+                const angle = (i / 36) * Math.PI * 2;
+                const dist = 14 + (i % 4) * 5;
+                const tx = Math.cos(angle) * dist;
+                const tz = Math.sin(angle) * dist;
+                // Keep center viewing corridor completely clear!
+                if (Math.abs(tx) < 5 && tz < 2 && tz > -16) continue;
+                const blade = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.4, 5), tuftMat);
+                blade.position.set(tx, 0.7, tz);
+                sceneGroup.add(blade);
+            }
+        }
+
+        // =====================================================================
+        // SCENE 0: 散步時 (小鳥 high on branch vs 獨角仙 low on trunk)
+        // =====================================================================
+        function buildScene0_Forest() {
+            scene.background = new THREE.Color(COLORS.skySunny);
+            scene.fog = new THREE.FogExp2(COLORS.skySunny, 0.01);
+            createPastelGround(COLORS.grassLight);
+            sceneGroup.add(createStorybookSun());
+
+            // Main Hero Tree right in front (Unobstructed!)
+            const treeGroup = new THREE.Group();
+            treeGroup.position.set(0, 0, -7.2);
+
+            const trunkMat = new THREE.MeshLambertMaterial({ color: COLORS.treeBark });
+            const mainTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.05, 11, 18), trunkMat);
+            mainTrunk.position.y = 5.5;
+            treeGroup.add(mainTrunk);
+
+            // Low Wooden Stump & Bark Perch for Rhinoceros Beetles (at y = 1.25, Little Mouse's exact eye level!)
+            const lowLog = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.78, 1.2, 16), trunkMat);
+            lowLog.position.set(0.65, 0.6, 1.15);
+            treeGroup.add(lowLog);
+
+            // Place Two Clear Rhinoceros Beetles (獨角仙) right in front at Little Mouse eye level
+            const beetlesHolder = new THREE.Group();
+            beetlesHolder.position.set(0.3, 1.28, -6.05);
+
+            const beetle1 = createBeetleModel();
+            beetle1.scale.set(0.85, 0.85, 0.85);
+            beetle1.position.set(-0.35, 0.08, 0.15);
+            beetle1.rotation.y = -0.35;
+            beetlesHolder.add(beetle1);
+
+            const beetle2 = createBeetleModel();
+            beetle2.scale.set(0.75, 0.75, 0.75);
+            beetle2.position.set(0.55, 0.35, -0.35);
+            beetle2.rotation.y = -2.4;
+            beetle2.rotation.z = 0.35;
+            beetlesHolder.add(beetle2);
+
+            sceneGroup.add(beetlesHolder);
+            animatedObjects.push({ type: 'beetle', mesh: beetle1, basePos: beetle1.position.clone() });
+
+            // High Branch for Songbirds (小鳥) at Big Mouse's exact eye level (y = 6.8)
+            const branchCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(0, 6.2, 0),
+                new THREE.Vector3(1.5, 6.5, 0.9),
+                new THREE.Vector3(3.2, 6.7, 1.2)
+            ]);
+            const highBranch = new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 12, 0.18, 10, false), trunkMat);
+            treeGroup.add(highBranch);
+
+            // Sparse storybook leaves around upper branches (not blocking the birds!)
+            const leafMat = new THREE.MeshLambertMaterial({ color: COLORS.leafGreen });
+            [[-1.8, 8.2, -0.5], [0.5, 9.5, -0.8], [3.6, 7.3, 0.9], [-1.2, 6.8, 0.6]].forEach(pos => {
+                const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.1, 14, 14), leafMat);
+                canopy.scale.set(1.2, 0.75, 0.9);
+                canopy.position.set(...pos);
+                treeGroup.add(canopy);
+            });
+
+            sceneGroup.add(treeGroup);
+
+            // Two Clear 3D Songbirds (小鳥) perched on the high branch at y = 6.9
+            const birdsHolder = new THREE.Group();
+            birdsHolder.position.set(1.55, 6.95, -6.1);
+
+            const bird1 = createBirdModel(0x5c9ead);
+            bird1.scale.set(0.95, 0.95, 0.95);
+            bird1.position.set(-0.55, 0.05, 0);
+            bird1.rotation.y = -1.1;
+            birdsHolder.add(bird1);
+
+            const bird2 = createBirdModel(0x74b3ce);
+            bird2.scale.set(0.85, 0.85, 0.85);
+            bird2.position.set(0.75, 0.18, 0.2);
+            bird2.rotation.y = -2.1;
+            birdsHolder.add(bird2);
+
+            sceneGroup.add(birdsHolder);
+            animatedObjects.push({ type: 'bird', mesh: bird1 }, { type: 'bird', mesh: bird2 });
+
+            // Background forest trees for depth
+            [[-10, -14], [11, -15], [-16, -9], [15, -10]].forEach(([tx, tz]) => {
+                const bgTree = new THREE.Group();
+                const t = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.65, 9, 10), trunkMat);
+                t.position.y = 4.5;
+                bgTree.add(t);
+                const c = new THREE.Mesh(new THREE.SphereGeometry(2.6, 14, 14), leafMat);
+                c.position.y = 9.2;
+                bgTree.add(c);
+                bgTree.position.set(tx, 0, tz);
+                sceneGroup.add(bgTree);
+            });
+
+            // Register Interactive Targets (Side-offset anchor positions so labels NEVER obstruct the 3D models)
+            registerInteractiveTarget(birdsHolder, {
+                worldPos: new THREE.Vector3(3.15, 7.15, -6.1), // Right side of the perched birds
+                lookAtPos: new THREE.Vector3(1.55, 7.0, -6.1),
+                fixedScreenPos: { xPct: 68, yPct: 45 },
+                labelSide: 'right',
+                title: '小鳥',
+                roleHint: 'big',
+                stampId: 'bird',
+                speaker: 'big',
+                speech: '嘿，小鳥，你們好！',
+                explanation: '💡 散步時，我在高高的樹上看到了小鳥。'
+            });
+
+            registerInteractiveTarget(beetlesHolder, {
+                worldPos: new THREE.Vector3(1.85, 1.45, -6.05), // Right side of the rhinoceros beetles
+                lookAtPos: new THREE.Vector3(0.3, 1.4, -6.05),
+                fixedScreenPos: { xPct: 62, yPct: 47 },
+                labelSide: 'right',
+                title: '獨角仙',
+                roleHint: 'small',
+                stampId: 'beetle',
+                speaker: 'small',
+                speech: '嘿，獨角仙，你們好！',
+                explanation: '💡 散步時，我在低低的草叢裏看到了獨角仙。'
+            });
+        }
+
+        // =====================================================================
+        // SCENE 1: 走過院子時 (高高的花朵 vs 地面粗壯的樹根)
+        // =====================================================================
+        function buildScene1_Yard() {
+            scene.background = new THREE.Color(COLORS.skySunny);
+            scene.fog = new THREE.FogExp2(COLORS.skySunny, 0.01);
+            createPastelGround(COLORS.grassLight);
+            sceneGroup.add(createStorybookSun());
+
+            // White Picket Yard Fence in background
+            const fenceMat = new THREE.MeshLambertMaterial({ color: 0xfffbeb });
+            for (let x = -18; x <= 18; x += 1.6) {
+                const post = new THREE.Mesh(new THREE.BoxGeometry(0.45, 3.2, 0.18), fenceMat);
+                post.position.set(x, 1.6, -13);
+                sceneGroup.add(post);
+            }
+
+            // RIGHT-CENTER: Tall Blooming Flowers (花朵) reaching Big Mouse's eye level (y ~ 6.7)
+            const flowersGroup = new THREE.Group();
+            flowersGroup.add(createTallFlower(-1.3, -6.0, 0xfacc15, 6.7)); // Yellow flower
+            flowersGroup.add(createTallFlower(0.2, -5.7, 0xfb7185, 7.0));  // Coral pink flower
+            flowersGroup.add(createTallFlower(1.7, -6.1, 0xfacc15, 6.5));  // Yellow flower
+            sceneGroup.add(flowersGroup);
+
+            // Ancient Yard Tree on the right with Prominent Exposed Surface Roots (樹根) at y ~ 1.0
+            const rootTreeGroup = new THREE.Group();
+            const barkMat = new THREE.MeshLambertMaterial({ color: COLORS.rootBrown });
+
+            const upperTrunk = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.5, 11, 16), barkMat);
+            upperTrunk.position.set(3.2, 6.2, -7.2);
+            rootTreeGroup.add(upperTrunk);
+
+            // Distinct, thick twisting surface roots (樹根) extending right into the foreground at y = 0.8~1.3
+            const rootsHolder = new THREE.Group();
+            const rootCurves = [
+                [new THREE.Vector3(3.0, 1.9, -6.8), new THREE.Vector3(1.5, 0.95, -5.6), new THREE.Vector3(-0.2, 0.35, -4.9)],
+                [new THREE.Vector3(3.2, 1.7, -6.6), new THREE.Vector3(2.4, 0.85, -5.1), new THREE.Vector3(1.2, 0.3, -4.4)],
+                [new THREE.Vector3(2.7, 1.8, -7.1), new THREE.Vector3(0.4, 0.8, -6.3), new THREE.Vector3(-1.4, 0.28, -5.6)]
+            ];
+            rootCurves.forEach(pts => {
+                const curve = new THREE.CatmullRomCurve3(pts);
+                const rootMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.36, 12, false), barkMat);
+                rootsHolder.add(rootMesh);
+            });
+            rootTreeGroup.add(rootsHolder);
+            sceneGroup.add(rootTreeGroup);
+
+            registerInteractiveTarget(flowersGroup, {
+                worldPos: new THREE.Vector3(2.85, 6.8, -5.8), // Right side of the tall flowers
+                lookAtPos: new THREE.Vector3(0.2, 6.8, -5.7),
+                fixedScreenPos: { xPct: 68, yPct: 48 },
+                labelSide: 'right',
+                title: '花朵',
+                roleHint: 'big',
+                stampId: 'flower',
+                speaker: 'big',
+                speech: '嘿，花朵，你們好！',
+                explanation: '💡 走過院子的時候，我看到了正在盛開的花朵。'
+            });
+
+            registerInteractiveTarget(rootsHolder, {
+                worldPos: new THREE.Vector3(2.45, 0.95, -5.0), // Right side of the exposed tree roots
+                lookAtPos: new THREE.Vector3(0.8, 0.9, -5.1),
+                fixedScreenPos: { xPct: 68, yPct: 54 },
+                labelSide: 'right',
+                title: '樹根',
+                roleHint: 'small',
+                stampId: 'root',
+                speaker: 'small',
+                speech: '嘿，樹根，你們好！',
+                explanation: '💡 走過院子的時候，我在大樹底下看到了粗壯的樹根。'
+            });
+        }
+
+        // =====================================================================
+        // SCENE 2: 走到屋子旁邊時 (Sunny: 屋頂 vs 地下室 | Rainy: 雨點兒 vs 水坑)
+        // =====================================================================
+        function buildScene2_HouseBeside() {
+            const skyCol = isRainingInScene2 ? COLORS.skyRain : COLORS.skySunny;
+            scene.background = new THREE.Color(skyCol);
+            scene.fog = new THREE.FogExp2(skyCol, 0.012);
+            createPastelGround(isRainingInScene2 ? 0x9ab858 : COLORS.grassLight);
+
+            if (!isRainingInScene2) {
+                sceneGroup.add(createStorybookSun());
+            }
+
+            // Build the White Cottage with Orange-Red Tiled Roof & Arched Door from the reference image
+            const houseGroup = new THREE.Group();
+            houseGroup.position.set(1.2, 0, -8.8);
+
+            // White Cottage Walls
+            const wallMat = new THREE.MeshLambertMaterial({ color: COLORS.houseWall });
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(7.6, 6.2, 6.4), wallMat);
+            wall.position.y = 3.1;
+            houseGroup.add(wall);
+
+            // Red-Orange Pitched Tiled Roof (屋頂 at y = 6.2 to 9.2 -> Big Mouse's eye level!)
+            const roofGroup = new THREE.Group();
+            const roofMat = new THREE.MeshLambertMaterial({ color: COLORS.houseRoof });
+            const roofCone = new THREE.Mesh(new THREE.ConeGeometry(6.2, 3.4, 4), roofMat);
+            roofCone.position.y = 7.9;
+            roofCone.rotation.y = Math.PI / 4;
+            roofGroup.add(roofCone);
+            houseGroup.add(roofGroup);
+
+            // Iconic Arched Orange Lattice Door/Window on the right side
+            const doorMat = new THREE.MeshLambertMaterial({ color: 0xe76f51 });
+            const doorRect = new THREE.Mesh(new THREE.BoxGeometry(1.7, 3.0, 0.15), doorMat);
+            doorRect.position.set(1.6, 1.5, 3.22);
+            houseGroup.add(doorRect);
+            const doorArch = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.15, 20), doorMat);
+            doorArch.rotation.x = Math.PI / 2;
+            doorArch.position.set(1.6, 3.0, 3.22);
+            houseGroup.add(doorArch);
+
+            // CLEAR BASEMENT WINDOW & STONE ENTRANCE (地下室) at the base of the wall (y = 0.8~1.5, Little Mouse eye level!)
+            const basementGroup = new THREE.Group();
+            basementGroup.position.set(-1.3, 0.95, 3.25);
+
+            // Stone frame around basement window
+            const stoneFrame = new THREE.Mesh(
+                new THREE.BoxGeometry(2.4, 1.45, 0.35),
+                new THREE.MeshLambertMaterial({ color: 0x64748b })
+            );
+            basementGroup.add(stoneFrame);
+
+            // Dark cellar interior with warm glow & iron bars
+            const cellarGlass = new THREE.Mesh(
+                new THREE.BoxGeometry(1.95, 1.05, 0.38),
+                new THREE.MeshBasicMaterial({ color: 0x1e293b })
+            );
+            basementGroup.add(cellarGlass);
+
+            for (let bx = -0.6; bx <= 0.6; bx += 0.4) {
+                const bar = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.04, 0.04, 1.05, 8),
+                    new THREE.MeshLambertMaterial({ color: 0xcbd5e1 })
+                );
+                bar.position.set(bx, 0, 0.22);
+                basementGroup.add(bar);
+            }
+            houseGroup.add(basementGroup);
+
+            // Pine bush beside the house like reference drawing
+            const pine = new THREE.Mesh(
+                new THREE.ConeGeometry(2.2, 6.5, 14),
+                new THREE.MeshLambertMaterial({ color: 0x4d7c5d })
+            );
+            pine.position.set(-4.8, 3.25, 1.2);
+            houseGroup.add(pine);
+
+            sceneGroup.add(houseGroup);
+
+            // Only register Roof & Basement options when it is NOT raining
+            if (!isRainingInScene2) {
+                registerInteractiveTarget(roofGroup, {
+                    worldPos: new THREE.Vector3(4.6, 7.8, -6.2), // Right side of the pitched red roof
+                    lookAtPos: new THREE.Vector3(1.2, 7.6, -5.8),
+                    fixedScreenPos: { xPct: 72, yPct: 41 },
+                    labelSide: 'right',
+                    title: '屋頂',
+                    roleHint: 'big',
+                    stampId: 'roof',
+                    speaker: 'big',
+                    speech: '嘿，屋頂，你好！',
+                    explanation: '💡 從屋子旁邊走過時，我看到了高處的紅瓦屋頂。'
+                });
+
+                registerInteractiveTarget(basementGroup, {
+                    worldPos: new THREE.Vector3(1.4, 1.0, -5.4), // Right side of the basement stone window
+                    lookAtPos: new THREE.Vector3(-0.1, 1.0, -5.4),
+                    fixedScreenPos: { xPct: 62, yPct: 53 },
+                    labelSide: 'right',
+                    title: '地下室',
+                    roleHint: 'small',
+                    stampId: 'basement',
+                    speaker: 'small',
+                    speech: '嘿，地下室，你好！',
+                    explanation: '💡 從屋子旁邊走過時，我看到了牆角低處的地下室。'
+                });
+            }
+
+            // If Heavy Rain Event is active: Add 3D Raindrops (雨點兒) in sky & Shimmering Puddle (水坑) on ground
+            if (isRainingInScene2) {
+                // High 3D Crystal Teardrop Raindrops (雨點兒) at y ~ 6.8
+                const raindropsGroup = new THREE.Group();
+                const dropMat = new THREE.MeshPhongMaterial({ color: 0x60a5fa, shininess: 100 });
+
+                for (let i = 0; i < 45; i++) {
+                    const drop = new THREE.Group();
+                    const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), dropMat);
+                    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.35, 10), dropMat);
+                    cone.position.y = 0.22;
+                    drop.add(sphere, cone);
+
+                    drop.position.set(
+                        (Math.random() - 0.5) * 14,
+                        2 + Math.random() * 9,
+                        -3.5 - Math.random() * 6
+                    );
+                    raindropsGroup.add(drop);
+                    rainDropMeshes.push(drop);
+                }
+                sceneGroup.add(raindropsGroup);
+
+                // Low Shimmering Blue Water Puddle (水坑) on ground at z = -4.6
+                const puddleGroup = new THREE.Group();
+                puddleGroup.position.set(-1.2, 0.05, -4.6);
+
+                const mainPuddle = new THREE.Mesh(
+                    new THREE.CylinderGeometry(1.85, 1.85, 0.06, 28),
+                    new THREE.MeshPhongMaterial({ color: 0x38bdf8, shininess: 120 })
+                );
+                mainPuddle.scale.set(1.3, 1, 0.85);
+                puddleGroup.add(mainPuddle);
+
+                // Ripple rings on puddle
+                [0.6, 1.2, 1.65].forEach(r => {
+                    const ring = new THREE.Mesh(
+                        new THREE.RingGeometry(r, r + 0.06, 24),
+                        new THREE.MeshBasicMaterial({ color: 0xe0f2fe, side: THREE.DoubleSide })
+                    );
+                    ring.rotation.x = -Math.PI / 2;
+                    ring.position.y = 0.04;
+                    ring.scale.set(1.3, 0.85, 1);
+                    puddleGroup.add(ring);
+                });
+                sceneGroup.add(puddleGroup);
+
+                registerInteractiveTarget(raindropsGroup, {
+                    worldPos: new THREE.Vector3(-2.6, 6.8, -4.8), // Left side of the falling raindrops
+                    lookAtPos: new THREE.Vector3(-0.8, 6.8, -4.8),
+                    fixedScreenPos: { xPct: 33, yPct: 48 },
+                    labelSide: 'left',
+                    title: '雨點兒',
+                    roleHint: 'big',
+                    stampId: 'raindrop',
+                    speaker: 'big',
+                    speech: '嘿，雨點兒，你好！',
+                    explanation: '💡 遇上大雨時，我看到了空中落下的雨點兒。'
+                });
+
+                registerInteractiveTarget(puddleGroup, {
+                    worldPos: new THREE.Vector3(-3.3, 0.45, -4.6), // Left side of the ground puddle
+                    lookAtPos: new THREE.Vector3(-1.2, 0.35, -4.6),
+                    fixedScreenPos: { xPct: 32, yPct: 60 },
+                    labelSide: 'left',
+                    title: '水坑',
+                    roleHint: 'small',
+                    stampId: 'puddle',
+                    speaker: 'small',
+                    speech: '嘿，水坑，你好！',
+                    explanation: '💡 遇上大雨時，我看到了地面積起的水坑。'
+                });
+            }
+        }
+
+        // =====================================================================
+        // SCENE 3: 在屋內時 (天棚 vs 地板 | 大個子舉起小不點兒一起看窗外的彩虹！)
+        // =====================================================================
+        function buildScene3_Indoors() {
+            scene.background = new THREE.Color(COLORS.skySunny);
+            scene.fog = new THREE.FogExp2(COLORS.skySunny, 0.006);
+
+            const roomGroup = new THREE.Group();
+
+            // 1. Warm Textured Wooden Floorboards (地板 at y = 0 -> Little Mouse's eye level)
+            const floorGroup = new THREE.Group();
+            const plankColor1 = new THREE.MeshLambertMaterial({ color: 0xd99b66 });
+            const plankColor2 = new THREE.MeshLambertMaterial({ color: 0xc6864e });
+            for (let i = -8; i <= 8; i++) {
+                const plank = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.15, 0.1, 16),
+                    i % 2 === 0 ? plankColor1 : plankColor2
+                );
+                plank.position.set(i * 1.18, 0, -4);
+                floorGroup.add(plank);
+            }
+            roomGroup.add(floorGroup);
+
+            // 2. Cozy Wooden-Beamed Ceiling with Warm Lamp (天棚 at y = 8.4 -> Big Mouse's eye level)
+            const ceilingGroup = new THREE.Group();
+            const ceilingPlane = new THREE.Mesh(
+                new THREE.BoxGeometry(18, 0.25, 16),
+                new THREE.MeshLambertMaterial({ color: 0xfef3c7 })
+            );
+            ceilingPlane.position.set(0, 8.5, -4);
+            ceilingGroup.add(ceilingPlane);
+
+            const beamMat = new THREE.MeshLambertMaterial({ color: 0x92400e });
+            for (let z = -10; z <= 0; z += 2.5) {
+                const beam = new THREE.Mesh(new THREE.BoxGeometry(18, 0.35, 0.4), beamMat);
+                beam.position.set(0, 8.25, z);
+                ceilingGroup.add(beam);
+            }
+
+            // Hanging Ceiling Lamp
+            const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8), beamMat);
+            cord.position.set(0, 7.8, -5.2);
+            ceilingGroup.add(cord);
+            const shade = new THREE.Mesh(
+                new THREE.ConeGeometry(0.95, 0.65, 16),
+                new THREE.MeshLambertMaterial({ color: 0xf59e0b })
+            );
+            shade.position.set(0, 7.3, -5.2);
+            ceilingGroup.add(shade);
+            roomGroup.add(ceilingGroup);
+
+            // 3. Front Wall with Wide Panoramic Window at y = 4.0 to 8.2
+            const wallMat = new THREE.MeshLambertMaterial({ color: 0xfffbeb });
+            const lowerWall = new THREE.Mesh(new THREE.BoxGeometry(20, 4.0, 0.4), wallMat);
+            lowerWall.position.set(0, 2.0, -7.8);
+            roomGroup.add(lowerWall);
+
+            const leftWallPillar = new THREE.Mesh(new THREE.BoxGeometry(3.2, 4.6, 0.4), wallMat);
+            leftWallPillar.position.set(-8.4, 6.3, -7.8);
+            roomGroup.add(leftWallPillar);
+
+            const rightWallPillar = new THREE.Mesh(new THREE.BoxGeometry(3.2, 4.6, 0.4), wallMat);
+            rightWallPillar.position.set(8.4, 6.3, -7.8);
+            roomGroup.add(rightWallPillar);
+
+            // Wide Window Frame
+            const frameMat = new THREE.MeshLambertMaterial({ color: 0xe76f51 });
+            const sill = new THREE.Mesh(new THREE.BoxGeometry(14.0, 0.25, 0.6), frameMat);
+            sill.position.set(0, 4.0, -7.75);
+            roomGroup.add(sill);
+
+            sceneGroup.add(roomGroup);
+
+            // 4. In Scene 3 (Indoors), Big Mouse's vision CAN see the complete rainbow;
+            // Little Mouse's vision CANNOT see the rainbow unless Big Mouse lifts Little Mouse up!
+            const rainbowGroup = new THREE.Group();
+            rainbowGroup.position.set(0, 4.15, -10.8);
+            rainbowGroup.visible = (currentRole === 'big' || isLiftedInScene3);
+
+            const rainbowColors = [
+                0xef4444, // Red
+                0xf97316, // Orange
+                0xfacc15, // Yellow
+                0x22c55e, // Green
+                0x38bdf8, // Light Blue
+                0x6366f1, // Indigo
+                0xa855f7  // Violet
+            ];
+            rainbowColors.forEach((hex, idx) => {
+                const radius = 5.4 - idx * 0.34;
+                const arc = new THREE.Mesh(
+                    new THREE.TorusGeometry(radius, 0.2, 16, 64, Math.PI),
+                    new THREE.MeshBasicMaterial({ color: hex })
+                );
+                rainbowGroup.add(arc);
+            });
+
+            // Fluffy white clouds at both ends of the rainbow arch
+            const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            [-4.6, 4.6].forEach(cx => {
+                const cloudCluster = new THREE.Group();
+                [[-0.6, 0, 0.55], [0, 0.25, 0.72], [0.6, 0.05, 0.58]].forEach(([ox, oy, r]) => {
+                    const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 14), cloudMat);
+                    puff.position.set(ox, oy, 0.3);
+                    cloudCluster.add(puff);
+                });
+                cloudCluster.position.set(cx, 0.15, 0);
+                rainbowGroup.add(cloudCluster);
+            });
+
+            // Outdoor distant green hills visible through the window
+            const hillMat = new THREE.MeshLambertMaterial({ color: COLORS.grassMid });
+            const hill1 = new THREE.Mesh(new THREE.SphereGeometry(14, 24, 16), hillMat);
+            hill1.scale.set(1.6, 0.45, 0.6);
+            hill1.position.set(-6, 0.5, -24);
+            sceneGroup.add(hill1);
+
+            const hill2 = new THREE.Mesh(new THREE.SphereGeometry(14, 24, 16), new THREE.MeshLambertMaterial({ color: COLORS.grassLight }));
+            hill2.scale.set(1.7, 0.45, 0.6);
+            hill2.position.set(7, 0.2, -23);
+            sceneGroup.add(hill2);
+
+            sceneGroup.add(rainbowGroup);
+
+            // Do NOT register Ceiling or Floor after clicking "大個子把小不點兒舉起來看窗外彩虹！"
+            if (!isLiftedInScene3) {
+                registerInteractiveTarget(ceilingGroup, {
+                    worldPos: new THREE.Vector3(2.2, 7.45, -5.2), // Right side of the ceiling lamp & beams
+                    lookAtPos: new THREE.Vector3(0, 7.45, -5.2),
+                    fixedScreenPos: { xPct: 64, yPct: 40 },
+                    labelSide: 'right',
+                    title: '天棚',
+                    roleHint: 'big',
+                    stampId: 'ceiling',
+                    speaker: 'big',
+                    speech: '嘿，天棚，你好！',
+                    explanation: '💡 跑進屋子躲雨時，我個子高，一進屋就看到頭頂上的天棚。'
+                });
+
+                registerInteractiveTarget(floorGroup, {
+                    worldPos: new THREE.Vector3(2.0, 0.55, -4.6), // Right side of the wooden floorboards
+                    lookAtPos: new THREE.Vector3(0, 0.45, -4.6),
+                    fixedScreenPos: { xPct: 64, yPct: 60 },
+                    labelSide: 'right',
+                    title: '地板',
+                    roleHint: 'small',
+                    stampId: 'floor',
+                    speaker: 'small',
+                    speech: '嘿，地板，你好！',
+                    explanation: '💡 跑進屋子躲雨時，我個子小，一進屋就看到腳下的地板。'
+                });
+            }
+
+            registerInteractiveTarget(rainbowGroup, {
+                worldPos: new THREE.Vector3(5.6, 6.6, -10.8), // Right side of the large complete window rainbow
+                lookAtPos: new THREE.Vector3(0, 6.8, -10.8),
+                fixedScreenPos: { xPct: 76, yPct: 45 },
+                labelSide: 'right',
+                title: '彩虹',
+                roleHint: 'both',
+                stampId: 'rainbow',
+                speaker: 'both',
+                speech: '嘿，彩虹，你好！',
+                explanation: currentRole === 'small'
+                    ? '💡 大雨停了，大個子想讓我看看窗外的景色，就把我舉了起來。我們一齊看到了窗外美麗的彩虹。'
+                    : '💡 大雨停了，我想讓小不點兒看看窗外的景色，就把小不點兒舉了起來。我們一齊看到了窗外美麗的彩虹。'
+            });
+        }
+
+        /***********************************************************************
+         * 6. SCENE SWITCHING, ROLE SWITCHING & INTERACTION LOGIC
+         ***********************************************************************/
+        // Build Greeting Step Scene: Two mice meet on the sunny meadow and greet each other before "1. 散步時"
+        function buildGreetingScene() {
+            clearCurrentScene();
+            scene.background = new THREE.Color(COLORS.skySunny);
+            scene.fog = new THREE.FogExp2(COLORS.skySunny, 0.01);
+            createPastelGround(COLORS.grassLight);
+            sceneGroup.add(createStorybookSun());
+
+            buildCompanionFriend();
+            refreshAllTargetLabels();
+            updateTopButtonsUI();
+            updateSpecialActionBar();
+            updateDefaultScenePrompt(false);
+
+            // Start from horizontal straight-ahead view; when the player presses "👋 與好朋友打招呼。" or clicks the friend, the camera tilts to look at the friend
+            resetLookFront();
+        }
+
+        function enterWalkingSceneFromGreeting() {
+            isGreetingStep = false;
+            hasGreetedFriend = false;
+            playChimeSound('switch');
+            resetLookFront();
+            buildScene(0);
+            speakCurrentSceneNarration();
+        }
+
+        // Switch directly to the "打招呼時" Greeting Scene from the top scene bar
+        function changeToGreetingScene() {
+            playChimeSound('switch');
+            isGreetingStep = true;
+            hasGreetedFriend = false;
+            isLiftedInScene3 = false;
+            targetEyeY = currentRole === 'big' ? EYE_HEIGHT_BIG : EYE_HEIGHT_SMALL;
+            buildGreetingScene();
+            speakCurrentSceneNarration();
+        }
+
+        function buildScene(index) {
+            currentSceneIndex = index;
+            if (isGreetingStep) {
+                buildGreetingScene();
+                return;
+            }
+            clearCurrentScene();
+
+            if (index === 0) buildScene0_Forest();
+            else if (index === 1) buildScene1_Yard();
+            else if (index === 2) buildScene2_HouseBeside();
+            else if (index === 3) buildScene3_Indoors();
+
+            buildCompanionFriend();
+            refreshAllTargetLabels();
+            updateTopButtonsUI();
+            updateSpecialActionBar();
+            updateDefaultScenePrompt(false);
+        }
+
+        // After selecting a character, start at the Greeting Step where the player sees their friend and immediately hears the greeting narration in Mandarin
+        function startGameWithRole(role) {
+            if (welcomeIntroTimer) {
+                clearTimeout(welcomeIntroTimer);
+                welcomeIntroTimer = null;
+            }
+            hasSpokenWelcomeIntro = true;
+            initAudio();
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+            document.getElementById('welcome-modal').classList.add('hidden');
+            currentRole = role;
+            currentSceneIndex = 0;
+            isGreetingStep = true;
+            hasGreetedFriend = false;
+            isRainingInScene2 = false;
+            hasClickedSunnyTargetInScene2 = false;
+            isLiftedInScene3 = false;
+            hasClickedIndoorTargetInScene3 = false;
+            targetEyeY = role === 'big' ? EYE_HEIGHT_BIG : EYE_HEIGHT_SMALL;
+            currentEyeY = targetEyeY;
+            buildGreetingScene();
+            speakCurrentSceneNarration();
+        }
+
+        // Every time the character is switched, start from that character's straight-ahead eye-level view
+        function switchRole(role, isInitial = false) {
+            currentRole = role;
+            isLiftedInScene3 = false; // Reset lifted state so the student experiences the character's true eye height
+            targetEyeY = role === 'big' ? EYE_HEIGHT_BIG : EYE_HEIGHT_SMALL;
+
+            if (!isInitial) playChimeSound('switch');
+
+            if (isGreetingStep) {
+                hasGreetedFriend = false;
+                buildGreetingScene();
+                speakCurrentSceneNarration();
+                return;
+            }
+
+            // Immediately start from straight-ahead horizontal view (pitch = 0, yaw = 0)
+            resetLookFront();
+
+            if (currentSceneIndex === 3) {
+                buildScene(3);
+            } else {
+                buildCompanionFriend();
+                refreshAllTargetLabels();
+                updateTopButtonsUI();
+                updateSpecialActionBar();
+                updateDefaultScenePrompt(false);
+            }
+
+            if (!isInitial) {
+                speakCurrentSceneNarration();
+            }
+        }
+
+        function changeScene(index) {
+            playChimeSound('switch');
+            isGreetingStep = false;
+            hasGreetedFriend = false;
+            if (index !== 2) {
+                isRainingInScene2 = false;
+                hasClickedSunnyTargetInScene2 = false;
+            }
+            if (index !== 3) {
+                isLiftedInScene3 = false;
+                hasClickedIndoorTargetInScene3 = false;
+            }
+            targetEyeY = currentRole === 'big' ? EYE_HEIGHT_BIG : EYE_HEIGHT_SMALL;
+            resetLookFront();
+            buildScene(index);
+            speakCurrentSceneNarration();
+        }
+
+        // "下一個情境" advances from Greeting Step -> Scene 0, or to the next textbook scene in order
+        function goToNextLocation() {
+            if (isGreetingStep) {
+                enterWalkingSceneFromGreeting();
+                return;
+            }
+            const nextIndex = (currentSceneIndex + 1) % 4;
+            changeScene(nextIndex);
+        }
+
+        // Activate heavy rain in Scene 2 (One-way trigger, hides button & removes roof/basement)
+        function triggerScene2Rain() {
+            isRainingInScene2 = true;
+            playChimeSound('switch');
+            buildScene(2);
+            speakCurrentSceneNarration();
+        }
+
+        // Lift up Little Mouse in Scene 3 (One-way trigger, hides button, removes floor/ceiling, shows "一齊説" with both icons)
+        function triggerScene3LiftUp() {
+            isLiftedInScene3 = true;
+            playChimeSound('switch');
+            targetEyeY = EYE_HEIGHT_BIG;
+            buildScene(3);
+            speakCurrentSceneNarration();
+        }
+
+        function updateSpecialActionBar() {
+            const bar = document.getElementById('special-action-bar');
+            // In Greeting Step, display bouncing "👋 與好朋友打招呼。" button; once clicked or greeted, hide this button immediately!
+            if (isGreetingStep) {
+                if (!hasGreetedFriend) {
+                    bar.classList.remove('hidden');
+                    bar.innerHTML = `
+                        <div class="storybook-panel rounded-2xl px-3 py-2 flex items-center gap-2">
+                            <button type="button" onclick="handleGreetingPromptClick(event)" class="btn-3d px-4 py-2 rounded-xl font-black text-sm md:text-base flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white animate-bounce">
+                                <span>👋 與好朋友打招呼。</span>
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    bar.classList.add('hidden');
+                    bar.innerHTML = '';
+                }
+            // Only show "遇上大雨！" button AFTER player has clicked sunny object (roof or basement)
+            } else if (currentSceneIndex === 2 && !isRainingInScene2 && hasClickedSunnyTargetInScene2) {
+                bar.classList.remove('hidden');
+                bar.innerHTML = `
+                    <div class="storybook-panel rounded-2xl px-4 py-2 flex items-center gap-3">
+                        <span class="text-sm font-black text-amber-900">天氣變化：</span>
+                        <button onclick="triggerScene2Rain()" class="btn-3d px-4 py-2 rounded-xl font-black text-sm flex items-center gap-1.5 bg-blue-500 text-white animate-bounce">
+                            <span>🌧️ 遇上大雨！</span>
+                        </button>
+                    </div>
+                `;
+            // Only show "大個子把小不點兒舉起來看窗外彩虹！" button AFTER player has clicked indoor object (ceiling or floor)
+            } else if (currentSceneIndex === 3 && !isLiftedInScene3 && hasClickedIndoorTargetInScene3) {
+                bar.classList.remove('hidden');
+                bar.innerHTML = `
+                    <div class="storybook-panel rounded-2xl px-4 py-2 flex items-center gap-3">
+                        <span class="text-sm font-black text-amber-900">大雨停了：</span>
+                        <button onclick="triggerScene3LiftUp()" class="btn-3d px-4 py-2 rounded-xl font-black text-sm flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-amber-500 text-white animate-bounce">
+                            <span>🙌 大個子把小不點兒舉起來看窗外彩虹！</span>
+                        </button>
+                    </div>
+                `;
+            } else {
+                bar.classList.add('hidden');
+                bar.innerHTML = '';
+            }
+        }
+
+        function handleGreetingPromptClick(event) {
+            if (event) event.stopPropagation();
+            hasGreetedFriend = true;
+            // Immediately hide the special action bar so it never blocks the greeting view
+            const bar = document.getElementById('special-action-bar');
+            if (bar) {
+                bar.classList.add('hidden');
+                bar.innerHTML = '';
+            }
+
+            const companionTarget = interactiveTargets.find(t => t.isCompanion);
+            if (companionTarget) {
+                triggerTargetGreeting(companionTarget);
+            } else {
+                // Fallback direct camera tilt if companion target is not found
+                if (currentRole === 'big') {
+                    aimCameraAtPoint(new THREE.Vector3(0, 0.85, -6.2));
+                } else {
+                    aimCameraAtPoint(new THREE.Vector3(0, 5.0, -5.8));
+                }
+            }
+        }
+
+        function updateTopButtonsUI() {
+            const btnBig = document.getElementById('btn-role-big');
+            const btnSmall = document.getElementById('btn-role-small');
+
+            // Highlight the currently selected character button clearly
+            if (btnBig && btnSmall) {
+                if (currentRole === 'big') {
+                    btnBig.className = 'btn-3d px-3.5 py-1.5 rounded-xl font-black text-sm md:text-base flex items-center gap-2 border-2 role-active-big ring-4 ring-red-300 shadow-lg scale-105';
+                    btnSmall.className = 'btn-3d px-3 py-1.5 rounded-xl font-black text-sm md:text-base flex items-center gap-2 border-2 border-transparent bg-amber-100/80 text-amber-900 opacity-75 hover:opacity-100';
+                } else {
+                    btnBig.className = 'btn-3d px-3 py-1.5 rounded-xl font-black text-sm md:text-base flex items-center gap-2 border-2 border-transparent bg-red-100/80 text-red-900 opacity-75 hover:opacity-100';
+                    btnSmall.className = 'btn-3d px-3.5 py-1.5 rounded-xl font-black text-sm md:text-base flex items-center gap-2 border-2 role-active-small ring-4 ring-amber-300 shadow-lg scale-105';
+                }
+            }
+
+            // Hide "下一個情境" button when in the final scene ("4. 在屋內時")
+            const nextSceneBtn = document.getElementById('btn-next-scene');
+            if (nextSceneBtn) {
+                if (!isGreetingStep && currentSceneIndex === 3) {
+                    nextSceneBtn.classList.add('hidden');
+                } else {
+                    nextSceneBtn.classList.remove('hidden');
+                }
+            }
+
+            // Update "打招呼時" button and 4 numbered scene buttons
+            const greetBtn = document.getElementById('scene-btn-greet');
+            if (greetBtn) {
+                if (isGreetingStep) {
+                    greetBtn.className = 'btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black bg-amber-500 text-white shadow';
+                } else {
+                    greetBtn.className = 'btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black bg-amber-100 hover:bg-amber-200 text-amber-900';
+                }
+            }
+
+            for (let i = 0; i < 4; i++) {
+                const sBtn = document.getElementById(`scene-btn-${i}`);
+                if (!isGreetingStep && i === currentSceneIndex) {
+                    sBtn.className = 'btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black bg-amber-500 text-white shadow';
+                } else {
+                    sBtn.className = 'btn-3d px-3 py-2 rounded-xl text-xs md:text-sm font-black bg-amber-100 hover:bg-amber-200 text-amber-900';
+                }
+            }
+
+            // Update Left Height Ruler ("高處", "低處", and blinking "被舉高了！")
+            const dot = document.getElementById('height-indicator-dot');
+            const label = document.getElementById('height-label-text');
+            const isHighNow = (currentRole === 'big') || (currentSceneIndex === 3 && isLiftedInScene3);
+            if (isHighNow) {
+                dot.style.top = '10px';
+                dot.className = 'absolute left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-red-500 border-2 border-white shadow-md transition-all duration-500 flex items-center justify-center text-xs';
+                if (currentRole === 'small' && currentSceneIndex === 3 && isLiftedInScene3) {
+                    label.innerHTML = '<span class="blink-lifted">被舉高了！</span>';
+                    label.className = 'mt-2 text-xs font-black text-center leading-tight';
+                } else {
+                    label.innerHTML = '高處';
+                    label.className = 'mt-2 text-xs font-black text-red-600 text-center leading-tight';
+                }
+            } else {
+                dot.style.top = '152px';
+                dot.className = 'absolute left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-amber-400 border-2 border-white shadow-md transition-all duration-500 flex items-center justify-center text-xs';
+                label.innerHTML = '低處';
+                label.className = 'mt-2 text-xs font-black text-amber-700 text-center leading-tight';
+            }
+        }
+
+        // Keep speaker badge icon/name matching current role (or both when lifted)
+        function setSpeakerBadgeVisual(speakerType) {
+            const badge = document.getElementById('speaker-badge');
+            const iconContainer = document.getElementById('speaker-icon-container');
+            const nameEl = document.getElementById('speaker-name');
+
+            if (speakerType === 'big') {
+                badge.className = 'w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-red-500 text-white flex flex-col items-center justify-center shrink-0 border-2 border-white shadow-md';
+                iconContainer.innerHTML = SVG_AVATAR_BIG;
+                nameEl.textContent = '大個子説';
+            } else if (speakerType === 'small') {
+                badge.className = 'w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-amber-400 text-amber-950 flex flex-col items-center justify-center shrink-0 border-2 border-white shadow-md';
+                iconContainer.innerHTML = SVG_AVATAR_SMALL;
+                nameEl.textContent = '小不點兒説';
+            } else {
+                badge.className = 'w-20 h-16 md:w-24 md:h-20 rounded-2xl bg-gradient-to-br from-red-500 to-amber-400 text-white flex flex-col items-center justify-center shrink-0 border-2 border-white shadow-md px-1';
+                iconContainer.innerHTML = SVG_AVATAR_BOTH;
+                nameEl.textContent = '一齊説';
+            }
+        }
+
+        function updateDefaultScenePrompt() {
+            const speechEl = document.getElementById('speech-text');
+            const expEl = document.getElementById('vision-explanation');
+            const readBtn = document.getElementById('btn-read-aloud');
+
+            currentSpeechLine = '';
+            const defaultSpeaker = (currentSceneIndex === 3 && isLiftedInScene3) ? 'both' : currentRole;
+            currentSpeechSpeaker = defaultSpeaker;
+
+            setSpeakerBadgeVisual(defaultSpeaker);
+
+            // Keep main greeting quote blank until object is clicked, while displaying the current scene's first-person narration text inside the dialogue box
+            speechEl.textContent = '';
+            const narrationText = getSceneNarrationText(currentRole, currentSceneIndex, isRainingInScene2, isLiftedInScene3, isGreetingStep);
+            expEl.textContent = narrationText ? `💡 ${narrationText}` : '';
+            if (readBtn) {
+                readBtn.className = 'btn-3d bg-sky-500 text-white px-5 py-2.5 rounded-2xl font-black text-base md:text-lg flex items-center justify-center gap-2 opacity-50 pointer-events-none';
+            }
+        }
+
+        function updateSpeechPanel(targetInfo) {
+            const speechEl = document.getElementById('speech-text');
+            const expEl = document.getElementById('vision-explanation');
+            const readBtn = document.getElementById('btn-read-aloud');
+
+            currentSpeechLine = targetInfo.speech;
+            currentSpeechSpeaker = targetInfo.speaker;
+
+            setSpeakerBadgeVisual(targetInfo.speaker);
+
+            speechEl.textContent = `“${targetInfo.speech}”`;
+            if (targetInfo.stampId === 'rainbow') {
+                expEl.textContent = currentRole === 'small'
+                    ? '💡 大雨停了，大個子想讓我看看窗外的景色，就把我舉了起來。我們一齊看到了窗外美麗的彩虹。'
+                    : '💡 大雨停了，我想讓小不點兒看看窗外的景色，就把小不點兒舉了起來。我們一齊看到了窗外美麗的彩虹。';
+            } else {
+                expEl.textContent = targetInfo.explanation;
+            }
+
+            if (readBtn) {
+                readBtn.className = 'btn-3d bg-sky-500 hover:bg-sky-600 text-white px-5 py-2.5 rounded-2xl font-black text-base md:text-lg flex items-center justify-center gap-2';
+            }
+        }
+
+        function triggerTargetGreeting(targetInfo) {
+            // Strict Role Filter: Only allow reading aloud objects belonging to the currently selected role
+            if (!isTargetSelectableByCurrentRole(targetInfo)) return;
+
+            // Smoothly turn first-person camera toward the 3D object's center!
+            aimCameraAtPoint(targetInfo.lookAtPos || targetInfo.worldPos);
+
+            updateSpeechPanel(targetInfo);
+            playChimeSound('greet');
+            speakMandarin(targetInfo.speech, targetInfo.speaker);
+
+            // If in Greeting Step and player greeted their friend, hide the greeting prompt button immediately
+            if (isGreetingStep && targetInfo.isCompanion) {
+                hasGreetedFriend = true;
+                updateSpecialActionBar();
+            }
+
+            if (targetInfo.stampId) {
+                collectedStamps.add(targetInfo.stampId);
+                document.getElementById('stamp-counter').textContent = `${collectedStamps.size}/${STORY_STAMP_ITEMS.length}`;
+
+                // Unlock "遇上大雨！" button after clicking roof or basement in Scene 2
+                if (targetInfo.stampId === 'roof' || targetInfo.stampId === 'basement') {
+                    hasClickedSunnyTargetInScene2 = true;
+                    updateSpecialActionBar();
+                }
+
+                // Unlock "大個子把小不點兒舉起來看窗外彩虹！" button after clicking ceiling or floor in Scene 3
+                if (targetInfo.stampId === 'ceiling' || targetInfo.stampId === 'floor') {
+                    hasClickedIndoorTargetInScene3 = true;
+                    updateSpecialActionBar();
+                }
+            }
+        }
+
+        function aimCameraAtPoint(worldPoint) {
+            const dx = worldPoint.x - camera.position.x;
+            const dy = worldPoint.y - targetEyeY;
+            const dz = worldPoint.z - camera.position.z;
+            const horizDist = Math.sqrt(dx * dx + dz * dz);
+
+            targetYaw = Math.atan2(-dx, -dz);
+            targetPitch = Math.atan2(dy, horizDist);
+            targetPitch = Math.max(-1.05, Math.min(1.05, targetPitch));
+        }
+
+        function nudgeCamera(deltaYaw, deltaPitch) {
+            targetYaw = Math.max(-1.2, Math.min(1.2, targetYaw + deltaYaw));
+            targetPitch = Math.max(-1.05, Math.min(1.05, targetPitch + deltaPitch));
+        }
+
+        function resetLookFront() {
+            targetYaw = 0;
+            targetPitch = 0;
+        }
+
+        /***********************************************************************
+         * 7. NOTEBOOK / STAMP COLLECTION MODAL (課文探索紀錄)
+         ***********************************************************************/
+        function toggleNotebookModal() {
+            const modal = document.getElementById('notebook-modal');
+            const isHidden = modal.classList.contains('hidden');
+            if (isHidden) {
+                renderStampList();
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        function renderStampList() {
+            const container = document.getElementById('stamp-list-container');
+            container.innerHTML = '';
+
+            STORY_STAMP_ITEMS.forEach(item => {
+                const isCollected = collectedStamps.has(item.id);
+                const row = document.createElement('div');
+                row.className = `p-3 rounded-2xl border-2 flex items-center justify-between gap-2 cursor-pointer transition ${
+                    isCollected ? 'bg-emerald-50 border-emerald-400' : 'bg-white/80 border-amber-200 hover:border-amber-400'
+                }`;
+                row.onclick = () => {
+                    toggleNotebookModal();
+                    isGreetingStep = false;
+                    hasGreetedFriend = false;
+                    if (item.speaker === 'big' || item.speaker === 'small') {
+                        currentRole = item.speaker;
+                    }
+                    isRainingInScene2 = (item.subState === 'rain');
+                    if (isRainingInScene2) hasClickedSunnyTargetInScene2 = true;
+                    isLiftedInScene3 = (item.subState === 'rainbow');
+                    if (isLiftedInScene3) hasClickedIndoorTargetInScene3 = true;
+                    targetEyeY = (currentRole === 'big' || isLiftedInScene3) ? EYE_HEIGHT_BIG : EYE_HEIGHT_SMALL;
+                    buildScene(item.scene);
+                    setTimeout(() => {
+                        const t = interactiveTargets.find(x => x.stampId === item.id);
+                        if (t) triggerTargetGreeting(t);
+                    }, 120);
+                };
+
+                const speakerBadge = item.speaker === 'big'
+                    ? '<span class="px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-black">大個子</span>'
+                    : item.speaker === 'small'
+                    ? '<span class="px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 text-xs font-black">小不點兒</span>'
+                    : '<span class="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-xs font-black">兩個好朋友</span>';
+
+                row.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-full flex items-center justify-center text-lg font-black ${
+                            isCollected ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-400'
+                        }">
+                            ${isCollected ? '✓' : '？'}
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                ${speakerBadge}
+                                <span class="font-black text-base text-slate-800">“${item.line}”</span>
+                            </div>
+                            <div class="text-xs text-slate-600 font-bold mt-0.5">${item.desc}</div>
+                        </div>
+                    </div>
+                    <span class="text-xs font-black text-sky-600 shrink-0">前往體驗 ▶</span>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        /***********************************************************************
+         * 8. POINTER / TOUCH FIRST-PERSON CAMERA CONTROLS & ANIMATION LOOP
+         ***********************************************************************/
+        function setupInteractionEvents(domElement) {
+            let isDragging = false;
+            let startX = 0, startY = 0;
+            let dragDistance = 0;
+
+            domElement.addEventListener('pointerdown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                dragDistance = 0;
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                dragDistance += Math.abs(dx) + Math.abs(dy);
+                startX = e.clientX;
+                startY = e.clientY;
+
+                targetYaw = Math.max(-1.25, Math.min(1.25, targetYaw + dx * 0.0045));
+                targetPitch = Math.max(-1.05, Math.min(1.05, targetPitch + dy * 0.0045));
+            });
+
+            window.addEventListener('pointerup', (e) => {
+                if (isDragging && dragDistance < 10) {
+                    handleCanvasClick(e);
+                }
+                isDragging = false;
+            });
+
+            // Keyboard arrow keys support
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp') nudgeCamera(0, 0.18);
+                else if (e.key === 'ArrowDown') nudgeCamera(0, -0.18);
+                else if (e.key === 'ArrowLeft') nudgeCamera(0.18, 0);
+                else if (e.key === 'ArrowRight') nudgeCamera(-0.18, 0);
+            });
+        }
+
+        function handleCanvasClick(e) {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            for (const item of interactiveTargets) {
+                // Only allow clicking 3D objects that belong to the currently selected role
+                if (!isTargetSelectableByCurrentRole(item)) continue;
+                const intersects = raycaster.intersectObject(item.object, true);
+                if (intersects.length > 0) {
+                    triggerTargetGreeting(item);
+                    break;
+                }
+            }
+        }
+
+        function update3DLabels() {
+            // Anchor each object's side label directly beside its 3D object position on screen,
+            // and automatically hide the label whenever the 3D object is outside the camera's visible screen view!
+            camera.updateMatrixWorld();
+            const projScreenMatrix = new THREE.Matrix4();
+            projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            const frustum = new THREE.Frustum();
+            frustum.setFromProjectionMatrix(projScreenMatrix);
+
+            interactiveTargets.forEach(item => {
+                if (!item.domElement) return;
+                const canSelect = isTargetSelectableByCurrentRole(item);
+
+                // Directly hide the label if it does not belong to the current role/state or if the 3D object itself is hidden
+                if (item.hideSideLabel || !canSelect || (item.object && !item.object.visible)) {
+                    item.domElement.style.display = 'none';
+                    item.domElement.style.pointerEvents = 'none';
+                    return;
+                }
+
+                // Check if the 3D object and its side anchor are visible inside the camera view
+                const objCenter = item.lookAtPos || item.worldPos;
+                const anchorPos = item.worldPos;
+
+                const projectedCenter = objCenter.clone().project(camera);
+                const projectedAnchor = anchorPos.clone().project(camera);
+
+                // If the object is behind the camera or rotated out of the visible screen bounds, hide the label
+                const isObjectOnScreen =
+                    frustum.containsPoint(objCenter) &&
+                    projectedCenter.z >= -1 && projectedCenter.z <= 1 &&
+                    projectedCenter.x >= -0.95 && projectedCenter.x <= 0.95 &&
+                    projectedCenter.y >= -0.92 && projectedCenter.y <= 0.92;
+
+                if (!isObjectOnScreen) {
+                    item.domElement.style.display = 'none';
+                    item.domElement.style.pointerEvents = 'none';
+                    return;
+                }
+
+                // Position the label locked right next to the 3D object's side anchor on screen
+                const screenX = (projectedAnchor.x * 0.5 + 0.5) * window.innerWidth;
+                const screenY = (-projectedAnchor.y * 0.5 + 0.5) * window.innerHeight;
+
+                item.domElement.style.display = 'block';
+                item.domElement.style.left = `${screenX}px`;
+                item.domElement.style.top = `${screenY}px`;
+                item.domElement.style.opacity = '1';
+                item.domElement.style.pointerEvents = 'auto';
+            });
+
+            // Update crosshair pitch hint text so students understand head tilt!
+            const hintEl = document.getElementById('eye-level-hint');
+            if (camPitch > 0.25) {
+                hintEl.textContent = '👀 正在抬頭往高處看';
+            } else if (camPitch < -0.25) {
+                hintEl.textContent = '👀 正在低頭往低處看';
+            } else {
+                hintEl.textContent = currentRole === 'big' ? '👀 大個子平視前方' : (isLiftedInScene3 ? '👀 被大個子舉高平視窗外' : '👀 小不點兒平視前方');
+            }
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        }
+
+        let clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const elapsed = clock.getElapsedTime();
+
+            // Smooth camera eye-height & head-turn interpolation
+            currentEyeY += (targetEyeY - currentEyeY) * 0.08;
+            camYaw += (targetYaw - camYaw) * 0.12;
+            camPitch += (targetPitch - camPitch) * 0.12;
+
+            camera.position.y = currentEyeY;
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = camYaw;
+            camera.rotation.x = camPitch;
+
+            // Animate birds & beetles
+            animatedObjects.forEach((obj, i) => {
+                if (obj.type === 'bird' && obj.mesh) {
+                    obj.mesh.position.y = Math.sin(elapsed * 3.5 + i) * 0.06;
+                    if (obj.mesh.userData.wings) {
+                        obj.mesh.userData.wings[0].rotation.x = 0.35 + Math.sin(elapsed * 9 + i) * 0.25;
+                        obj.mesh.userData.wings[1].rotation.x = -0.35 - Math.sin(elapsed * 9 + i) * 0.25;
+                    }
+                } else if (obj.type === 'beetle' && obj.mesh) {
+                    obj.mesh.position.x = obj.basePos.x + Math.sin(elapsed * 1.6) * 0.08;
+                }
+            });
+
+            // Animate falling 3D raindrops in Scene 2 Rain mode
+            rainDropMeshes.forEach(drop => {
+                drop.position.y -= 0.14;
+                if (drop.position.y < 0.4) {
+                    drop.position.y = 9.5;
+                }
+            });
+
+            update3DLabels();
+            renderer.render(scene, camera);
+        }
+
+        // Speak the opening story sentence in Mandarin (zh-CN) immediately upon opening the link / entering the role-selection page
+        function scheduleWelcomeIntroSpeech() {
+            const welcomeText = '從前，有一隻個子很大的老鼠和一隻個子很小的老鼠。他們兩個是好朋友。';
+
+            const trySpeakNow = () => {
+                const modal = document.getElementById('welcome-modal');
+                if (!modal || modal.classList.contains('hidden') || hasSpokenWelcomeIntro) return;
+                if ('speechSynthesis' in window) {
+                    const voices = window.speechSynthesis.getVoices();
+                    if (voices && getBestMandarinVoice()) {
+                        hasSpokenWelcomeIntro = speakMandarin(welcomeText, 'both');
+                    }
+                }
+            };
+
+            // Try immediately on page load
+            trySpeakNow();
+
+            // Also trigger as soon as browser voices finish loading
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.addEventListener('voiceschanged', trySpeakNow, { once: true });
+            }
+
+            // Fallback short retry in case voices took a moment to initialize
+            welcomeIntroTimer = setTimeout(() => {
+                const modal = document.getElementById('welcome-modal');
+                if (!modal || modal.classList.contains('hidden') || hasSpokenWelcomeIntro) return;
+                hasSpokenWelcomeIntro = speakMandarin(welcomeText, 'both');
+            }, 150);
+
+            // Fallback for browsers (like iPad Safari) that require a touch gesture to unlock SpeechSynthesis if autoplay was blocked
+            const unlockWelcomeSpeech = (e) => {
+                if (e.target && e.target.closest && e.target.closest('[onclick*="startGameWithRole"]')) {
+                    window.removeEventListener('pointerdown', unlockWelcomeSpeech);
+                    return;
+                }
+                const modal = document.getElementById('welcome-modal');
+                if (modal && !modal.classList.contains('hidden')) {
+                    if (welcomeIntroTimer) clearTimeout(welcomeIntroTimer);
+                    hasSpokenWelcomeIntro = speakMandarin(welcomeText, 'both');
+                }
+                window.removeEventListener('pointerdown', unlockWelcomeSpeech);
+            };
+            window.addEventListener('pointerdown', unlockWelcomeSpeech);
+        }
+
+        window.onload = function () {
+            initThreeJS();
+            animate();
+            scheduleWelcomeIntroSpeech();
+        };
+    </script>
+</body>
+</html>
